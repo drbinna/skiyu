@@ -228,7 +228,7 @@ function inferAuthor(skillPath, repoOwner) {
 
 // ─── Main scraper ──────────────────────────────────────────────────
 
-async function scrapeSource(source) {
+async function scrapeSource(source, upsertFn) {
   console.log(`\n━━━ ${source.owner}/${source.repo} ━━━`);
 
   // Get repo metadata for star count
@@ -247,78 +247,98 @@ async function scrapeSource(source) {
   );
   console.log(`  Found ${skillFiles.length} SKILL.md files`);
 
-  const skills = [];
+  const allSkills = [];
   let processed = 0;
+  let uploadedSoFar = 0;
+  const PARALLEL = 20;
+  const UPSERT_CHUNK = 200; // Flush to DB every 200 skills
 
-  for (const file of skillFiles) {
-    if (skills.length >= LIMIT) break;
-    processed++;
+  let chunk = [];
 
-    const folderPath = file.path.replace(/\/SKILL\.md$/, "");
-    const parts = folderPath.split("/").filter(Boolean);
-    const skillName = parts[parts.length - 1];
+  for (let i = 0; i < skillFiles.length; i += PARALLEL) {
+    if (allSkills.length >= LIMIT) break;
+    const batch = skillFiles.slice(i, i + PARALLEL);
 
-    // Skip the root SKILL.md if any
-    if (parts.length === 0) continue;
+    const results = await Promise.all(
+      batch.map(async (file) => {
+        const folderPath = file.path.replace(/\/SKILL\.md$/, "");
+        const parts = folderPath.split("/").filter(Boolean);
+        if (parts.length === 0) return null;
+        const skillName = parts[parts.length - 1];
 
-    const raw = await fetchRaw(source.owner, source.repo, defaultBranch, file.path);
-    if (!raw) {
-      console.log(`  ⚠ couldn't fetch ${file.path}`);
-      continue;
-    }
+        const raw = await fetchRaw(source.owner, source.repo, defaultBranch, file.path);
+        if (!raw) return null;
 
-    const { frontmatter, body } = parseFrontmatter(raw);
-    const name = frontmatter.name || skillName;
-    const description = frontmatter.description || body.split("\n").find((l) => l.trim())?.slice(0, 200) || "";
-    const license = frontmatter.license || repo.license?.spdx_id || "Unknown";
-    const authorUsername = inferAuthor(folderPath, source.owner);
+        const { frontmatter, body } = parseFrontmatter(raw);
+        const name = frontmatter.name || skillName;
+        const description = frontmatter.description || body.split("\n").find((l) => l.trim())?.slice(0, 200) || "";
+        const license = frontmatter.license || repo.license?.spdx_id || "Unknown";
+        const authorUsername = inferAuthor(folderPath, source.owner);
 
-    const hasReadme = tree.tree.some((n) => n.path === `${folderPath}/README.md`);
-    const hasTests = tree.tree.some((n) => n.path.startsWith(`${folderPath}/tests/`) || n.path.startsWith(`${folderPath}/test/`));
-    const hasLicense = tree.tree.some((n) => /LICENSE/i.test(n.path) && n.path.startsWith(folderPath));
+        const hasReadme = tree.tree.some((n) => n.path === `${folderPath}/README.md`);
+        const hasTests = tree.tree.some((n) => n.path.startsWith(`${folderPath}/tests/`) || n.path.startsWith(`${folderPath}/test/`));
+        const hasLicense = tree.tree.some((n) => /LICENSE/i.test(n.path) && n.path.startsWith(folderPath));
 
-    const category = categorize(name, description, body);
-    const quality = computeQualityScore({
-      frontmatter,
-      body,
-      stars,
-      hasReadme,
-      hasTests,
-      hasLicense,
-    });
+        const category = categorize(name, description, body);
+        const quality = computeQualityScore({
+          frontmatter,
+          body,
+          stars,
+          hasReadme,
+          hasTests,
+          hasLicense,
+        });
 
-    if (quality < 30) {
-      // Skip excluded-tier skills (not worth the catalog space)
-      continue;
-    }
+        if (quality < 30) return null;
 
-    skills.push({
-      source_id: source.slug,
-      source_owner: source.owner,
-      source_repo: source.repo,
-      skill_path: folderPath,
-      name,
-      slug: slugify(`${authorUsername}-${skillName}`),
-      description: description.slice(0, 500),
-      category_slug: category,
-      author_username: authorUsername,
-      license,
-      github_url: `https://github.com/${source.owner}/${source.repo}/tree/${defaultBranch}/${folderPath}`,
-      github_repo: `${source.owner}/${source.repo}`,
-      github_stars: stars,
-      quality_score: quality,
-      quality_tier: qualityTier(quality),
-      download_url: `https://github.com/${source.owner}/${source.repo}/archive/refs/heads/${defaultBranch}.zip`,
-      compatibility: frontmatter.compatibility ? (Array.isArray(frontmatter.compatibility) ? frontmatter.compatibility : [frontmatter.compatibility]) : ["claude"],
-      source: "scraped",
-      sync_status: "active",
-      last_synced_at: new Date().toISOString(),
-    });
+        return {
+          source_id: source.slug,
+          source_owner: source.owner,
+          source_repo: source.repo,
+          skill_path: folderPath,
+          name,
+          slug: slugify(`${authorUsername}-${source.repo}-${skillName}`),
+          description: description.slice(0, 500),
+          category_slug: category,
+          author_username: authorUsername,
+          license,
+          github_url: `https://github.com/${source.owner}/${source.repo}/tree/${defaultBranch}/${folderPath}`,
+          github_repo: `${source.owner}/${source.repo}`,
+          github_stars: stars,
+          quality_score: quality,
+          quality_tier: qualityTier(quality),
+          download_url: `https://github.com/${source.owner}/${source.repo}/archive/refs/heads/${defaultBranch}.zip`,
+          compatibility: frontmatter.compatibility ? (Array.isArray(frontmatter.compatibility) ? frontmatter.compatibility : [frontmatter.compatibility]) : ["claude"],
+          source: "scraped",
+          sync_status: "active",
+          last_synced_at: new Date().toISOString(),
+        };
+      })
+    );
 
-    if (processed % 50 === 0) {
-      console.log(`  ... processed ${processed}/${skillFiles.length}`);
+    const filtered = results.filter(Boolean);
+    chunk.push(...filtered);
+    allSkills.push(...filtered);
+    processed += batch.length;
+
+    // Flush to DB when chunk is big enough (only in live mode)
+    if (!DRY_RUN && upsertFn && chunk.length >= UPSERT_CHUNK) {
+      const before = uploadedSoFar;
+      uploadedSoFar += await upsertFn(chunk);
+      process.stdout.write(`  [${processed}/${skillFiles.length} processed · ${uploadedSoFar} uploaded]\n`);
+      chunk = [];
     }
   }
+
+  // Final flush
+  if (!DRY_RUN && upsertFn && chunk.length > 0) {
+    uploadedSoFar += await upsertFn(chunk);
+    console.log(`  [${processed}/${skillFiles.length} processed · ${uploadedSoFar} uploaded]`);
+  }
+
+  console.log(`  ✓ extracted ${allSkills.length} usable skills (skipped ${processed - allSkills.length} low-quality)`);
+  return allSkills;
+}
 
   console.log(`  ✓ extracted ${skills.length} usable skills (skipped ${processed - skills.length} low-quality)`);
   return skills;
@@ -329,8 +349,21 @@ async function scrapeSource(source) {
 async function upsertToSupabase(skills) {
   if (skills.length === 0) return { inserted: 0, authors: 0 };
 
+  // Deduplicate by slug — keep highest quality per slug
+  const bySlug = new Map();
+  for (const s of skills) {
+    const existing = bySlug.get(s.slug);
+    if (!existing || s.quality_score > existing.quality_score) {
+      bySlug.set(s.slug, s);
+    }
+  }
+  const deduped = [...bySlug.values()];
+  if (deduped.length < skills.length) {
+    console.log(`  Deduped: ${skills.length} → ${deduped.length} unique slugs`);
+  }
+
   // 1. Collect unique authors
-  const uniqueAuthors = [...new Set(skills.map((s) => s.author_username))];
+  const uniqueAuthors = [...new Set(deduped.map((s) => s.author_username))];
   console.log(`\n  Upserting ${uniqueAuthors.length} authors...`);
 
   const authorRows = uniqueAuthors.map((username) => ({
@@ -358,8 +391,8 @@ async function upsertToSupabase(skills) {
 
   // 3. Upsert skills in batches of 100
   let inserted = 0;
-  for (let i = 0; i < skills.length; i += 100) {
-    const batch = skills.slice(i, i + 100).map((s) => ({
+  for (let i = 0; i < deduped.length; i += 100) {
+    const batch = deduped.slice(i, i + 100).map((s) => ({
       name: s.name,
       slug: s.slug,
       description: s.description,
@@ -388,7 +421,7 @@ async function upsertToSupabase(skills) {
       continue;
     }
     inserted += batch.length;
-    process.stdout.write(`  ✓ inserted ${inserted}/${skills.length}\r`);
+    process.stdout.write(`  ✓ inserted ${inserted}/${deduped.length}\r`);
   }
   console.log();
   return { inserted, authors: uniqueAuthors.length };

@@ -281,41 +281,109 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: "rgba(255,255,255,0.04)", borderRadius: 16, overflow: "hidden" }}>
-            {filtered.map((sk: SkillCatalogItem, i: number) => (
-              <div key={sk.id} className="skill-card" onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} style={{ padding: 28, background: hovered === i ? "rgba(255,255,255,0.03)" : "#000", cursor: "pointer", position: "relative" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.03)" }}>{sk.name[0]}</div>
-                  <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 10px", borderRadius: 100, border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.3)", fontFamily: "'Fragment Mono', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>{sk.category_name}</span>
-                </div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 4 }}>{sk.name}</h3>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: "'Fragment Mono', monospace" }}>@{sk.author_username}</div>
-                <div style={{ display: "flex", gap: 16, marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'Fragment Mono', monospace", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", gap: 14 }}>
-                    <span>★ {sk.avg_rating || "—"}</span>
-                    <span>↓ {fmt(sk.download_count || 0)}</span>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+            gap: 12,
+          }}>
+            {filtered.map((sk: SkillCatalogItem) => {
+              const color = "#22d3ee";
+              return (
+                <div key={sk.id} className="skill-card-grid" style={{
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderTop: `2px solid ${color}`,
+                  borderRadius: 10,
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: 160,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.12)";
+                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.06)";
+                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
+                }}>
+                  {/* top: name + license */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Erode', serif", letterSpacing: "-0.01em" }}>{sk.name}</span>
+                    <span style={{
+                      fontSize: 11, fontFamily: "'Fragment Mono', monospace", fontWeight: 600,
+                      padding: "3px 10px", borderRadius: 100,
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      color: "rgba(255,255,255,0.3)",
+                      flexShrink: 0, marginLeft: 8,
+                    }}>{sk.github_license || "N/A"}</span>
                   </div>
-                  <button
-                    onClick={(e) => handleDownload(e, sk.id, sk.name)}
-                    disabled={downloadingId === sk.id}
-                    style={{
-                      background: hovered === i || downloadingId === sk.id ? "#fff" : "transparent",
-                      color: hovered === i || downloadingId === sk.id ? "#000" : "rgba(255,255,255,0.5)",
-                      border: "1px solid " + (hovered === i ? "#fff" : "rgba(255,255,255,0.1)"),
-                      padding: "4px 12px",
-                      borderRadius: 6,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      fontFamily: "'Fragment Mono', monospace",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    {downloadingId === sk.id ? "↓ Starting..." : "↓ Get"}
-                  </button>
+
+                  {/* author */}
+                  <div style={{ fontSize: 11, fontFamily: "'Fragment Mono', monospace", color: "rgba(255,255,255,0.2)", marginTop: 4 }}>
+                    @{sk.author_username} · ★ {sk.github_stars || 0}
+                  </div>
+
+                  {/* description */}
+                  <div style={{
+                    fontSize: 13, fontFamily: "'Erode', serif", color: "rgba(255,255,255,0.35)", lineHeight: 1.5,
+                    marginTop: 12, overflow: "hidden",
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
+                  }}>{sk.description}</div>
+
+                  <div style={{ flex: 1 }} />
+
+                  {/* footer: stats + category + download */}
+                  <div style={{
+                    borderTop: "1px solid rgba(255,255,255,0.04)",
+                    paddingTop: 12, marginTop: 16,
+                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                  }}>
+                    <span style={{ fontSize: 11, fontFamily: "'Fragment Mono', monospace", color: "rgba(255,255,255,0.25)" }}>
+                      ★ {sk.avg_rating || "—"} · ↓ {fmt(sk.download_count || 0)}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{
+                        fontSize: 10, fontFamily: "'Fragment Mono', monospace", letterSpacing: "0.04em", textTransform: "uppercase" as const,
+                        padding: "2px 8px", borderRadius: 4,
+                        background: `${color}1F`,
+                        color: color,
+                      }}>{sk.category_name}</span>
+                      <button
+                        onClick={(e) => handleDownload(e, sk.id, sk.name)}
+                        disabled={downloadingId === sk.id}
+                        style={{
+                          background: downloadingId === sk.id ? "#fff" : "rgba(255,255,255,0.06)",
+                          color: downloadingId === sk.id ? "#000" : "#fff",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontFamily: "'Fragment Mono', monospace",
+                          fontWeight: 600,
+                          cursor: downloadingId === sk.id ? "default" : "pointer",
+                          transition: "all 0.2s",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (downloadingId !== sk.id) {
+                            (e.currentTarget as HTMLButtonElement).style.background = "#fff";
+                            (e.currentTarget as HTMLButtonElement).style.color = "#000";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (downloadingId !== sk.id) {
+                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
+                            (e.currentTarget as HTMLButtonElement).style.color = "#fff";
+                          }
+                        }}
+                      >{downloadingId === sk.id ? "↓ Starting..." : "↓ Get"}</button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div style={{ textAlign: "center", marginTop: 48 }}>
             <button className="btn-ghost" onClick={() => navigate("/explore")} style={{ padding: "12px 36px", borderRadius: 8, fontSize: 13, letterSpacing: "0.04em" }}>Browse All Skills →</button>
