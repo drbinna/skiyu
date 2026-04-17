@@ -131,3 +131,124 @@ export async function recordInstall(skillId: string, method: string = "web") {
     install_method: method,
   });
 }
+
+// ── Download a skill ────────────────────────────────────────
+export async function downloadSkill(
+  skillId: string,
+  skillName: string,
+  userId?: string | null
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  try {
+    // Resolve the right download URL (storage if available, else GitHub)
+    const { data, error } = await supabase.rpc("resolve_download_url", {
+      target_skill_id: skillId,
+    });
+
+    if (error || !data || data.length === 0) {
+      return { success: false, error: "No download available" };
+    }
+
+    const { url, method, file_size } = data[0];
+    if (!url) return { success: false, error: "No download URL" };
+
+    // Log the download event (non-blocking)
+    supabase
+      .from("downloads")
+      .insert({
+        skill_id: skillId,
+        user_id: userId || null,
+        download_method: method,
+        file_size_bytes: file_size,
+        user_agent: navigator.userAgent,
+        referrer: document.referrer || null,
+      })
+      .then(() => {});
+
+    // Trigger the download
+    const slug = skillName.toLowerCase().replace(/\s+/g, "-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug}.zip`;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    return { success: true, url };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Download failed" };
+  }
+}
+
+// ── Upload a zip package (for publishers) ───────────────────
+export async function uploadSkillPackage(
+  skillId: string,
+  userId: string,
+  file: File,
+  version: string = "1.0.0"
+): Promise<{ success: boolean; packageId?: string; error?: string }> {
+  try {
+    // Build storage path: {userId}/{skillId}/{version}.zip
+    const storagePath = `${userId}/${skillId}/${version}.zip`;
+
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("skill-packages")
+      .upload(storagePath, file, {
+        contentType: "application/zip",
+        upsert: true,
+      });
+
+    if (uploadError) return { success: false, error: uploadError.message };
+
+    // Get the public URL
+    const { data: urlData } = supabase.storage
+      .from("skill-packages")
+      .getPublicUrl(storagePath);
+
+    // Compute a simple content hash (first + size + last byte)
+    const contentHash = `${file.name}-${file.size}-${file.lastModified}`;
+
+    // Create the skill_packages row
+    const { data: pkgData, error: pkgError } = await supabase
+      .from("skill_packages")
+      .insert({
+        skill_id: skillId,
+        storage_bucket: "skill-packages",
+        storage_path: storagePath,
+        storage_url: urlData.publicUrl,
+        file_size_bytes: file.size,
+        content_hash: contentHash,
+        version,
+        packaged_by: "publisher",
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    if (pkgError) return { success: false, error: pkgError.message };
+
+    // Update the skill to point to the storage URL
+    await supabase
+      .from("skills")
+      .update({
+        download_url: urlData.publicUrl,
+        download_method: "storage",
+        package_size_bytes: file.size,
+      })
+      .eq("id", skillId);
+
+    return { success: true, packageId: pkgData.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Upload failed" };
+  }
+}
+
+// ── Format file size ────────────────────────────────────────
+export function formatFileSize(bytes: number | null): string {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

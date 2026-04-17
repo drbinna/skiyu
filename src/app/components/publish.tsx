@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { uploadSkillPackage, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
 
 // Publisher's skills — fetched from Supabase when auth is active, mock data as fallback
@@ -88,6 +89,12 @@ export default function Publish() {
   const [claimBannerDismissed, setClaimBannerDismissed] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimResult, setClaimResult] = useState<number | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSkillTarget, setUploadSkillTarget] = useState<string>("");
+  const [uploadVersion, setUploadVersion] = useState("1.0.0");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const { user, profile, loading: authLoading, signInWithGitHub, claimableSkills, claimedSkills, claimAllSkills } = useAuth();
@@ -102,6 +109,51 @@ export default function Publish() {
     const count = await claimAllSkills();
     setClaimResult(count);
     setClaiming(false);
+  };
+
+  const handleFileSelect = (file: File) => {
+    if (!file.name.endsWith(".zip")) {
+      setUploadError("Only .zip files are allowed");
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadError("File is too large. Maximum size is 50 MB.");
+      return;
+    }
+    setUploadError(null);
+    setUploadFile(file);
+    setUploadStep(1);
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile || !user || !uploadSkillTarget) {
+      setUploadError("Please select a skill to upload for");
+      return;
+    }
+    setUploadProgress(10);
+    const result = await uploadSkillPackage(
+      uploadSkillTarget,
+      user.id,
+      uploadFile,
+      uploadVersion
+    );
+    if (result.success) {
+      setUploadProgress(100);
+      setUploadStep(2);
+    } else {
+      setUploadError(result.error || "Upload failed");
+      setUploadProgress(0);
+    }
+  };
+
+  const resetUpload = () => {
+    setShowUpload(false);
+    setUploadStep(0);
+    setUploadFile(null);
+    setUploadProgress(0);
+    setUploadError(null);
+    setUploadSkillTarget("");
+    setUploadVersion("1.0.0");
   };
 
   return (
@@ -457,18 +509,18 @@ export default function Publish() {
           position: "fixed", inset: 0, zIndex: 200,
           background: "rgba(0,0,0,0.8)", backdropFilter: "blur(12px)",
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={() => { setShowUpload(false); setUploadStep(0); }}>
+        }} onClick={resetUpload}>
           <div onClick={e => e.stopPropagation()} style={{
             width: 520, background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 16, overflow: "hidden",
           }}>
             <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>Publish a skill</span>
-              <span onClick={() => { setShowUpload(false); setUploadStep(0); }} style={{ cursor: "pointer", color: "rgba(255,255,255,0.3)", fontSize: 18 }}>×</span>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>Upload skill package</span>
+              <span onClick={resetUpload} style={{ cursor: "pointer", color: "rgba(255,255,255,0.3)", fontSize: 18 }}>×</span>
             </div>
 
             <div style={{ padding: "16px 24px", display: "flex", gap: 8, alignItems: "center" }}>
-              {["Upload", "Configure", "Review"].map((s, i) => (
+              {["Select", "Configure", "Done"].map((s, i) => (
                 <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{
                     width: 22, height: 22, borderRadius: 6, fontSize: 11, fontWeight: 700, fontFamily: M,
@@ -484,86 +536,152 @@ export default function Publish() {
             </div>
 
             <div style={{ padding: "8px 24px 24px" }}>
+              {uploadError && (
+                <div style={{
+                  background: "rgba(255,100,100,0.06)", border: "1px solid rgba(255,100,100,0.2)",
+                  borderRadius: 8, padding: "10px 14px", marginBottom: 14,
+                  fontSize: 12, color: "rgba(255,150,150,0.9)",
+                }}>{uploadError}</div>
+              )}
+
+              {/* Step 0 — file drop */}
               {uploadStep === 0 && (
                 <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".zip,application/zip"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFileSelect(f);
+                    }}
+                  />
                   <div className="upload-zone"
                     onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
-                    onDrop={e => { e.preventDefault(); setDragOver(false); setUploadStep(1); }}
-                    onClick={() => setUploadStep(1)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      const f = e.dataTransfer.files[0];
+                      if (f) handleFileSelect(f);
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
                     style={{
                       border: `1px dashed ${dragOver ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)"}`,
                       borderRadius: 12, padding: "40px 24px", textAlign: "center",
                       background: dragOver ? "rgba(255,255,255,0.03)" : "transparent",
+                      cursor: "pointer",
                     }}>
-                    <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.15 }}>/</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Drop your .skill file here</div>
-                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>or click to browse — ZIP, .skill, or folder</div>
+                    <div style={{ fontSize: 28, marginBottom: 12, opacity: 0.15 }}>↓</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Drop your .zip file here</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>or click to browse — max 50 MB</div>
                   </div>
-                  <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: "rgba(255,255,255,0.15)" }}>or</div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <button className="ghost-btn" style={{
-                      flex: 1, padding: "10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)",
-                      background: "transparent", color: "rgba(255,255,255,0.4)", fontSize: 12, fontWeight: 600,
-                    }}>Import from GitHub</button>
-                    <button className="ghost-btn" onClick={() => setUploadStep(1)} style={{
-                      flex: 1, padding: "10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)",
-                      background: "transparent", color: "rgba(255,255,255,0.4)", fontSize: 12, fontWeight: 600,
-                    }}>Start from scratch</button>
+                  <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8, fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
+                    <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>What gets uploaded:</span> A zipped folder containing SKILL.md + any supporting scripts. This replaces the GitHub redirect for this skill — users will download from our CDN instead.
                   </div>
                 </>
               )}
 
-              {uploadStep === 1 && (
+              {/* Step 1 — configure skill + version */}
+              {uploadStep === 1 && uploadFile && (
                 <>
-                  {[
-                    { label: "Skill name", placeholder: "e.g. Invoice Generator" },
-                    { label: "Description", placeholder: "One-line description of what your skill does" },
-                    { label: "Category", placeholder: "Select..." },
-                  ].map(f => (
-                    <div key={f.label} style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>{f.label}</div>
-                      <input placeholder={f.placeholder} style={{
+                  <div style={{
+                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+                    borderRadius: 8, padding: "12px 14px", marginBottom: 16,
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{uploadFile.name}</div>
+                      <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
+                        {formatFileSize(uploadFile.size)}
+                      </div>
+                    </div>
+                    <button onClick={() => { setUploadFile(null); setUploadStep(0); }} style={{
+                      background: "transparent", border: "1px solid rgba(255,255,255,0.08)",
+                      color: "rgba(255,255,255,0.4)", padding: "4px 10px", borderRadius: 6,
+                      fontSize: 11, cursor: "pointer", fontFamily: F,
+                    }}>Change</button>
+                  </div>
+
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Target skill</div>
+                    <select
+                      value={uploadSkillTarget}
+                      onChange={(e) => setUploadSkillTarget(e.target.value)}
+                      style={{
                         width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
                         background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                        color: "#fff", outline: "none", fontFamily: F,
-                      }} />
-                    </div>
-                  ))}
-                  <div>
-                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>License</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {["MIT", "Apache-2.0", "Proprietary"].map(l => (
-                        <button key={l} className="ghost-btn" style={{
-                          padding: "7px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-                          border: "1px solid rgba(255,255,255,0.08)", background: "transparent",
-                          color: "rgba(255,255,255,0.35)",
-                        }}>{l}</button>
+                        color: "#fff", outline: "none", fontFamily: F, cursor: "pointer",
+                      }}>
+                      <option value="" style={{ background: "#111" }}>Select a claimed skill...</option>
+                      {claimedSkills.map(s => (
+                        <option key={s.id} value={s.id} style={{ background: "#111" }}>{s.name}</option>
                       ))}
-                    </div>
+                    </select>
+                    {claimedSkills.length === 0 && (
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 6, fontStyle: "italic" }}>
+                        You need to claim a skill first before you can upload a package for it.
+                      </div>
+                    )}
                   </div>
+
+                  <div>
+                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Version</div>
+                    <input
+                      value={uploadVersion}
+                      onChange={(e) => setUploadVersion(e.target.value)}
+                      placeholder="1.0.0"
+                      style={{
+                        width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
+                        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                        color: "#fff", outline: "none", fontFamily: M,
+                      }}
+                    />
+                  </div>
+
+                  {uploadProgress > 0 && uploadProgress < 100 && (
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.5)", marginBottom: 6 }}>
+                        Uploading... {uploadProgress}%
+                      </div>
+                      <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${uploadProgress}%`, background: "#22d3ee", transition: "width 0.3s" }} />
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
+              {/* Step 2 — success */}
               {uploadStep === 2 && (
                 <>
-                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "16px", marginBottom: 16 }}>
-                    <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Validation</div>
-                    {[
-                      { label: "SKILL.md found", val: "✓ pass" },
-                      { label: "Frontmatter valid", val: "✓ pass" },
-                      { label: "Scripts scanned — no issues", val: "✓ pass" },
-                      { label: "Test suite — 4/4 passing", val: "✓ pass" },
-                      { label: "Quality score", val: "A (87/100)" },
-                    ].map(v => (
-                      <div key={v.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
-                        <span style={{ color: "rgba(255,255,255,0.4)" }}>{v.label}</span>
-                        <span style={{ fontFamily: M, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{v.val}</span>
-                      </div>
-                    ))}
+                  <div style={{ textAlign: "center", padding: "16px 0 24px" }}>
+                    <div style={{
+                      width: 56, height: 56, margin: "0 auto 16px", borderRadius: 12,
+                      background: "rgba(52,211,153,0.1)", color: "rgb(52,211,153)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 24,
+                    }}>✓</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Package uploaded!</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
+                      Your skill now serves downloads from our CDN instead of GitHub.
+                      Users will get the latest version you uploaded.
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", marginBottom: 16, lineHeight: 1.6 }}>
-                    Your skill will be reviewed within 24 hours. Free skills from trusted publishers are auto-approved.
+                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
+                      <span style={{ color: "rgba(255,255,255,0.4)" }}>File size</span>
+                      <span style={{ fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{uploadFile && formatFileSize(uploadFile.size)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
+                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Version</span>
+                      <span style={{ fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{uploadVersion}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
+                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Status</span>
+                      <span style={{ fontFamily: M, color: "rgb(52,211,153)" }}>Active</span>
+                    </div>
                   </div>
                 </>
               )}
@@ -573,18 +691,28 @@ export default function Publish() {
               padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,0.06)",
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
-              <button className="ghost-btn" onClick={() => {
-                if (uploadStep === 0) { setShowUpload(false); } else { setUploadStep(uploadStep - 1); }
+              <button onClick={() => {
+                if (uploadStep === 0 || uploadStep === 2) { resetUpload(); }
+                else { setUploadStep(uploadStep - 1); }
               }} style={{
                 padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600,
                 border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(255,255,255,0.35)",
-              }}>{uploadStep === 0 ? "Cancel" : "Back"}</button>
-              <button className="action-btn" onClick={() => {
-                if (uploadStep < 2) { setUploadStep(uploadStep + 1); } else { setShowUpload(false); setUploadStep(0); }
-              }} style={{
-                padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 700,
-                border: "none", background: "#fff", color: "#000",
-              }}>{uploadStep === 2 ? "Submit for Review" : "Continue"}</button>
+                cursor: "pointer", fontFamily: F,
+              }}>{uploadStep === 2 ? "Close" : uploadStep === 0 ? "Cancel" : "Back"}</button>
+
+              {uploadStep === 1 && (
+                <button
+                  onClick={handleUpload}
+                  disabled={!uploadSkillTarget || uploadProgress > 0}
+                  style={{
+                    padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                    border: "none", background: !uploadSkillTarget || uploadProgress > 0 ? "rgba(255,255,255,0.2)" : "#fff",
+                    color: !uploadSkillTarget || uploadProgress > 0 ? "rgba(255,255,255,0.4)" : "#000",
+                    cursor: !uploadSkillTarget || uploadProgress > 0 ? "not-allowed" : "pointer",
+                    fontFamily: F,
+                  }}
+                >{uploadProgress > 0 && uploadProgress < 100 ? "Uploading..." : "Upload to storage"}</button>
+              )}
             </div>
           </div>
         </div>

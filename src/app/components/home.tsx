@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { useFeaturedSkills } from "@/lib/hooks";
+import { useFeaturedSkills, downloadSkill } from "@/lib/hooks";
 import type { SkillCatalogItem } from "@/lib/types";
 import NavAuth from "./nav-auth";
+import { useAuth } from "@/lib/auth";
 
 function NoiseOverlay() {
   const c = useRef<HTMLCanvasElement>(null);
@@ -95,9 +96,18 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [scrollY, setScrollY] = useState(0);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const { skills: allSkills, loading: skillsLoading } = useFeaturedSkills(12);
+
+  const handleDownload = async (e: React.MouseEvent, skillId: string, skillName: string) => {
+    e.stopPropagation();
+    setDownloadingId(skillId);
+    await downloadSkill(skillId, skillName, user?.id);
+    setTimeout(() => setDownloadingId(null), 1200);
+  };
 
   useEffect(() => {
     const fn = () => setScrollY(window.scrollY);
@@ -273,15 +283,36 @@ export default function Home() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: "rgba(255,255,255,0.04)", borderRadius: 16, overflow: "hidden" }}>
             {filtered.map((sk: SkillCatalogItem, i: number) => (
-              <div key={sk.id} className="skill-card" onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} style={{ padding: 28, background: hovered === i ? "rgba(255,255,255,0.03)" : "#000", cursor: "pointer" }}>
+              <div key={sk.id} className="skill-card" onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} style={{ padding: 28, background: hovered === i ? "rgba(255,255,255,0.03)" : "#000", cursor: "pointer", position: "relative" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
                   <div style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.03)" }}>{sk.name[0]}</div>
                   <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 10px", borderRadius: 100, border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.3)", fontFamily: "'Fragment Mono', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>{sk.category_name}</span>
                 </div>
                 <h3 style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 4 }}>{sk.name}</h3>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: "'Fragment Mono', monospace" }}>@{sk.author_username}</div>
-                <div style={{ display: "flex", gap: 16, marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'Fragment Mono', monospace" }}>
-                  <span>★ {sk.avg_rating || "—"}</span><span>↓ {fmt(sk.install_count)}</span>
+                <div style={{ display: "flex", gap: 16, marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'Fragment Mono', monospace", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", gap: 14 }}>
+                    <span>★ {sk.avg_rating || "—"}</span>
+                    <span>↓ {fmt(sk.download_count || 0)}</span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDownload(e, sk.id, sk.name)}
+                    disabled={downloadingId === sk.id}
+                    style={{
+                      background: hovered === i || downloadingId === sk.id ? "#fff" : "transparent",
+                      color: hovered === i || downloadingId === sk.id ? "#000" : "rgba(255,255,255,0.5)",
+                      border: "1px solid " + (hovered === i ? "#fff" : "rgba(255,255,255,0.1)"),
+                      padding: "4px 12px",
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      fontFamily: "'Fragment Mono', monospace",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {downloadingId === sk.id ? "↓ Starting..." : "↓ Get"}
+                  </button>
                 </div>
               </div>
             ))}

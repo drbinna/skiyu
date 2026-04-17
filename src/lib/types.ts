@@ -60,6 +60,10 @@ export interface SkillCatalogItem {
   install_count: number;
   review_count: number;
   avg_rating: number | null;
+  download_count: number;
+  download_url: string | null;
+  download_method: "github_redirect" | "storage" | "cli" | "mcp";
+  package_size_bytes: number | null;
   price_cents: number | null;
   price_type: string;
   author_username: string | null;
