@@ -31,6 +31,7 @@ export default function Explore() {
   const [licenseFilter, setLicenseFilter] = useState("Any");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -38,7 +39,12 @@ export default function Explore() {
   const handleDownload = async (e: React.MouseEvent, skillId: string, skillName: string) => {
     e.stopPropagation();
     setDownloadingId(skillId);
-    await downloadSkill(skillId, skillName, user?.id);
+    setDownloadError(null);
+    const result = await downloadSkill(skillId, skillName, user?.id);
+    if (!result.success) {
+      setDownloadError(result.error || "Download failed");
+      setTimeout(() => setDownloadError(null), 4000);
+    }
     setTimeout(() => setDownloadingId(null), 1200);
   };
 
@@ -131,6 +137,24 @@ export default function Explore() {
         </div>
         <NavAuth />
       </nav>
+
+      {/* Download error toast */}
+      {downloadError && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 1000,
+          background: "rgba(220,38,38,0.1)",
+          border: "1px solid rgba(220,38,38,0.3)",
+          borderRadius: 8, padding: "12px 16px",
+          fontSize: 13, fontFamily: F,
+          color: "rgba(255,200,200,0.9)",
+          maxWidth: 320, backdropFilter: "blur(12px)",
+          animation: "slideIn 0.2s ease-out",
+        }}>
+          <style>{`@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>Download error</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>{downloadError}</div>
+        </div>
+      )}
 
       <div style={{ display: "flex", maxWidth: 1200, margin: "0 auto" }}>
 

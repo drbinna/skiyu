@@ -145,11 +145,15 @@ export async function downloadSkill(
     });
 
     if (error || !data || data.length === 0) {
-      return { success: false, error: "No download available" };
+      return { success: false, error: "No download available for this skill" };
     }
 
     const { url, method, file_size } = data[0];
-    if (!url) return { success: false, error: "No download URL" };
+    if (!url) return { success: false, error: "This skill has no download URL configured" };
+
+    // For GitHub redirects, verify the URL is reachable before navigating
+    // (HEAD requests to github.com are blocked by CORS, so we rely on the redirect
+    // and trust the URL — real scraper will validate URLs at ingestion time)
 
     // Log the download event (non-blocking)
     supabase
@@ -164,16 +168,23 @@ export async function downloadSkill(
       })
       .then(() => {});
 
-    // Trigger the download
+    // Trigger the download — use window.open so GitHub 404s open in a new tab
+    // and don't replace the current page
     const slug = skillName.toLowerCase().replace(/\s+/g, "-");
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${slug}.zip`;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+
+    if (method === "storage") {
+      // Supabase Storage serves the file directly — use download attribute
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slug}.zip`;
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      // GitHub redirect — open in new tab so the main app stays usable
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
 
     return { success: true, url };
   } catch (err: any) {
