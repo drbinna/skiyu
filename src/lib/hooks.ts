@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import JSZip from "jszip";
 import { supabase } from "./supabase";
 import type { Category, SkillCatalogItem } from "./types";
 
@@ -141,17 +140,17 @@ export async function recordInstall(skillId: string, method: string = "web") {
 // Two sources, in priority order:
 //   1. Supabase Storage (when a publisher uploaded a packaged zip).
 //      We trust these URLs and stream them as blobs.
-//   2. A client-side zip built from the skill's GitHub subfolder.
-//      We call api.github.com/.../git/trees (CORS '*') once to list files,
-//      fetch each file from raw.githubusercontent.com (CORS '*'), and
-//      assemble a real zip with JSZip. Contains only the skill, not the
-//      whole repo.
+//   2. The zip-skill-folder Supabase Edge Function, which server-side
+//      zips just the skill's subfolder from its GitHub repo using a
+//      GITHUB_TOKEN (5000 req/hour shared — bypasses the 60/hour
+//      unauthenticated per-IP limit that bites users on shared NATs).
+//      Returns application/zip with Content-Disposition, ready to save.
 //
 // GitHub archive URLs (codeload.github.com, /archive/refs/heads/...) are
-// NOT used here because their CORS header is scoped to
+// NOT used because their CORS header is scoped to
 // render.githubusercontent.com and the browser cannot read the blob body
 // from our origin. Any legacy download-directory.github.io URL in the DB
-// is ignored — those return HTML that macOS Archive Utility rejects.
+// returns HTML which macOS Archive Utility rejects, so we ignore those too.
 
 interface DownloadableSkill {
   github_repo: string | null;
@@ -169,82 +168,7 @@ function parseBranchFromGithubUrl(url: string | null): string {
 
 function isSupabaseStorageUrl(url: string | null): boolean {
   if (!url) return false;
-  // Supabase public storage URLs look like:
-  //   https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
   return /supabase\.co\/storage\/v1\/object\/public\//.test(url);
-}
-
-async function buildSubfolderZip(
-  repo: string,
-  branch: string,
-  folderPath: string
-): Promise<Blob> {
-  // 1) Get the tree at the given ref.
-  const treeUrl = `https://api.github.com/repos/${repo}/git/trees/${branch}?recursive=1`;
-  const treeRes = await fetch(treeUrl, {
-    headers: { Accept: "application/vnd.github+json" },
-  });
-
-  if (!treeRes.ok) {
-    // Retry on master if main didn't exist.
-    if (treeRes.status === 404 && branch === "main") {
-      return buildSubfolderZip(repo, "master", folderPath);
-    }
-    if (treeRes.status === 403) {
-      throw new Error(
-        "GitHub rate limit reached. Please try again in an hour, or sign in to lift the limit."
-      );
-    }
-    throw new Error(`GitHub tree fetch failed (${treeRes.status})`);
-  }
-
-  const tree = (await treeRes.json()) as {
-    tree?: Array<{ path: string; type: string; sha: string }>;
-    truncated?: boolean;
-  };
-
-  if (!tree.tree) {
-    throw new Error("GitHub tree response was empty");
-  }
-
-  const normalized = folderPath.replace(/^\/+|\/+$/g, "");
-  const prefix = normalized + "/";
-  const files = tree.tree.filter(
-    (e) => e.type === "blob" && (e.path === normalized || e.path.startsWith(prefix))
-  );
-
-  if (files.length === 0) {
-    throw new Error(`No files found at ${normalized}`);
-  }
-
-  // 2) Fetch each file from the raw CDN (no separate rate limit; CORS '*').
-  const zip = new JSZip();
-  const CONCURRENCY = 6;
-
-  async function worker(queue: typeof files) {
-    while (true) {
-      const item = queue.shift();
-      if (!item) return;
-      const rawUrl = `https://raw.githubusercontent.com/${repo}/${branch}/${item.path}`;
-      const r = await fetch(rawUrl);
-      if (!r.ok) {
-        throw new Error(`Fetch failed for ${item.path} (${r.status})`);
-      }
-      const bytes = await r.arrayBuffer();
-      // Rebase the path so the zip contains only the skill folder contents.
-      const relative = item.path === normalized
-        ? item.path.split("/").pop() || item.path
-        : item.path.slice(prefix.length);
-      zip.file(relative, bytes);
-    }
-  }
-
-  const queue = files.slice();
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker(queue))
-  );
-
-  return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }
 
 function triggerBrowserDownload(blob: Blob, filename: string) {
@@ -257,6 +181,44 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
+async function invokeZipFunction(params: {
+  repo: string;
+  branch: string;
+  skill_folder_path: string;
+  filename: string;
+}): Promise<Blob> {
+  // supabase-js functions.invoke doesn't expose binary responses cleanly,
+  // so we POST directly and attach the auth headers the Supabase gateway
+  // expects. The function is deployed with verify_jwt: true so anon JWT
+  // is required.
+  const base = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
+  const anon = (supabase as unknown as { supabaseKey: string }).supabaseKey;
+  const url = `${base}/functions/v1/zip-skill-folder`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      apikey: anon,
+      authorization: `Bearer ${anon}`,
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let message = `Edge function failed (${res.status})`;
+    try {
+      const j = await res.json();
+      if (j?.error) message = j.error;
+    } catch {
+      // Response wasn't JSON; keep the default message.
+    }
+    throw new Error(message);
+  }
+
+  return res.blob();
 }
 
 export async function downloadSkill(
@@ -280,8 +242,6 @@ export async function downloadSkill(
     const slug = skillName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     const filename = `${slug}.zip`;
 
-    // Log the download event (non-blocking). The exact source is recorded so
-    // we can measure how often each path is used.
     const logDownload = (resolvedMethod: string, fileSize: number | null) => {
       supabase
         .from("downloads")
@@ -311,16 +271,17 @@ export async function downloadSkill(
       return { success: true };
     }
 
-    // Path 2: build a zip from the skill's GitHub subfolder, client-side.
+    // Path 2: server-side subfolder zip via edge function.
     if (data.github_repo && data.skill_folder_path) {
       const branch = parseBranchFromGithubUrl(data.github_url);
-      const blob = await buildSubfolderZip(
-        data.github_repo,
+      const blob = await invokeZipFunction({
+        repo: data.github_repo,
         branch,
-        data.skill_folder_path
-      );
+        skill_folder_path: data.skill_folder_path,
+        filename: slug,
+      });
       triggerBrowserDownload(blob, filename);
-      logDownload("github_subfolder_zip", blob.size);
+      logDownload("edge_zip", blob.size);
       return { success: true };
     }
 
