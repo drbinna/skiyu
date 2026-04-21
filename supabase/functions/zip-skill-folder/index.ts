@@ -84,6 +84,7 @@ serve(async (req: Request) => {
   }
 
   const token = Deno.env.get("GITHUB_TOKEN") ?? null;
+  console.log(JSON.stringify({ stage: "start", repo, folderPath, token_present: token !== null }));
 
   // 1) Fetch the tree. Retry on master if main is missing.
   let treeRes = await fetchTree(repo, branchInput, token);
@@ -92,6 +93,15 @@ serve(async (req: Request) => {
     treeRes = await fetchTree(repo, "master", token);
     branch = "master";
   }
+
+  console.log(JSON.stringify({
+    stage: "tree_fetched",
+    status: treeRes.status,
+    rate_limit: treeRes.headers.get("x-ratelimit-limit"),
+    rate_remaining: treeRes.headers.get("x-ratelimit-remaining"),
+    rate_used: treeRes.headers.get("x-ratelimit-used"),
+  }));
+
   if (treeRes.status === 403) {
     return json(429, {
       error: "GitHub rate limit. The edge function is running without a token or the token is exhausted.",
@@ -159,6 +169,7 @@ serve(async (req: Request) => {
   if (hadError) return json(502, { error: hadError });
 
   const blob = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  console.log(JSON.stringify({ stage: "done", files: files.length, bytes: blob.length }));
 
   const downloadName =
     (body.filename || "").replace(/[^a-zA-Z0-9_.-]/g, "") ||
