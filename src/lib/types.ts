@@ -21,7 +21,10 @@ export interface Skill {
   description: string;
   category_id: string | null;
   quality_score: number | null;
-  quality_tier: "featured" | "standard" | "basic" | "excluded";
+  quality_tier: "featured" | "standard" | "basic" | "excluded" | "needs_audit";
+  skill_folder_path?: string | null;
+  skill_md_content?: string | null;
+  frontmatter?: Record<string, unknown> | null;
   github_repo: string | null;
   github_url: string | null;
   github_stars: number;
@@ -51,8 +54,9 @@ export interface SkillCatalogItem {
   category_slug: string | null;
   category_icon: string | null;
   quality_score: number | null;
-  quality_tier: string;
+  quality_tier: "featured" | "standard" | "basic" | "excluded" | "needs_audit";
   github_repo: string | null;
+  github_url?: string | null;
   github_stars: number;
   github_license: string | null;
   github_language: string | null;
@@ -74,4 +78,14 @@ export interface SkillCatalogItem {
   created_at: string;
   last_synced_at: string | null;
   updated_at: string;
+}
+
+/** Extra fields fetched on-demand when opening the skill modal. */
+export interface SkillDetail {
+  id: string;
+  frontmatter: Record<string, unknown> | null;
+  readme_content: string | null;
+  skill_md_content: string | null;
+  skill_folder_path: string | null;
+  github_url: string | null;
 }

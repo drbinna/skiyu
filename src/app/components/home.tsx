@@ -4,6 +4,7 @@ import { useFeaturedSkills, downloadSkill } from "@/lib/hooks";
 import type { SkillCatalogItem } from "@/lib/types";
 import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
+import SkillModal from "./skill-modal";
 
 function NoiseOverlay() {
   const c = useRef<HTMLCanvasElement>(null);
@@ -97,6 +98,7 @@ export default function Home() {
   const [scrollY, setScrollY] = useState(0);
   const [hovered, setHovered] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [activeSkill, setActiveSkill] = useState<SkillCatalogItem | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -288,11 +290,26 @@ export default function Home() {
           }}>
             {filtered.map((sk: SkillCatalogItem) => {
               const color = "#22d3ee";
+              const needsAudit = sk.quality_tier === "needs_audit";
               return (
-                <div key={sk.id} className="skill-card-grid" style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  borderTop: `2px solid ${color}`,
+                <div key={sk.id} className="skill-card-grid"
+                role="button"
+                tabIndex={0}
+                onClick={() => setActiveSkill(sk)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setActiveSkill(sk);
+                  }
+                }}
+                style={{
+                  background: needsAudit ? "rgba(245,158,11,0.04)" : "rgba(255,255,255,0.02)",
+                  border: needsAudit
+                    ? "1px solid rgba(245,158,11,0.2)"
+                    : "1px solid rgba(255,255,255,0.06)",
+                  borderTop: needsAudit
+                    ? "2px solid rgba(245,158,11,0.5)"
+                    : `2px solid ${color}`,
                   borderRadius: 10,
                   padding: 20,
                   display: "flex",
@@ -300,18 +317,32 @@ export default function Home() {
                   minHeight: 160,
                   cursor: "pointer",
                   transition: "all 0.2s",
+                  opacity: needsAudit ? 0.7 : 1,
                 }}
                 onMouseEnter={(e) => {
+                  if (needsAudit) return;
                   (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.12)";
                   (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
                 }}
                 onMouseLeave={(e) => {
+                  if (needsAudit) return;
                   (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.06)";
                   (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
                 }}>
                   {/* top: name + license */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Erode', serif", letterSpacing: "-0.01em" }}>{sk.name}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Erode', serif", letterSpacing: "-0.01em" }}>{sk.name}</span>
+                      {needsAudit && (
+                        <span style={{
+                          fontSize: 9, fontFamily: "'Fragment Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase" as const,
+                          padding: "2px 6px", borderRadius: 4,
+                          background: "rgba(245,158,11,0.15)",
+                          color: "#fcd34d",
+                          whiteSpace: "nowrap",
+                        }}>⚠ audit</span>
+                      )}
+                    </div>
                     <span style={{
                       fontSize: 11, fontFamily: "'Fragment Mono', monospace", fontWeight: 600,
                       padding: "3px 10px", borderRadius: 100,
@@ -352,33 +383,41 @@ export default function Home() {
                         color: color,
                       }}>{sk.category_name}</span>
                       <button
-                        onClick={(e) => handleDownload(e, sk.id, sk.name)}
-                        disabled={downloadingId === sk.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (needsAudit) return;
+                          handleDownload(e, sk.id, sk.name);
+                        }}
+                        disabled={downloadingId === sk.id || needsAudit}
                         style={{
-                          background: downloadingId === sk.id ? "#fff" : "rgba(255,255,255,0.06)",
-                          color: downloadingId === sk.id ? "#000" : "#fff",
+                          background: needsAudit
+                            ? "rgba(255,255,255,0.02)"
+                            : downloadingId === sk.id ? "#fff" : "rgba(255,255,255,0.06)",
+                          color: needsAudit
+                            ? "rgba(255,255,255,0.25)"
+                            : downloadingId === sk.id ? "#000" : "#fff",
                           border: "1px solid rgba(255,255,255,0.08)",
                           padding: "4px 10px",
                           borderRadius: 6,
                           fontSize: 11,
                           fontFamily: "'Fragment Mono', monospace",
                           fontWeight: 600,
-                          cursor: downloadingId === sk.id ? "default" : "pointer",
+                          cursor: needsAudit || downloadingId === sk.id ? "not-allowed" : "pointer",
                           transition: "all 0.2s",
                         }}
                         onMouseEnter={(e) => {
-                          if (downloadingId !== sk.id) {
+                          if (!needsAudit && downloadingId !== sk.id) {
                             (e.currentTarget as HTMLButtonElement).style.background = "#fff";
                             (e.currentTarget as HTMLButtonElement).style.color = "#000";
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (downloadingId !== sk.id) {
+                          if (!needsAudit && downloadingId !== sk.id) {
                             (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
                             (e.currentTarget as HTMLButtonElement).style.color = "#fff";
                           }
                         }}
-                      >{downloadingId === sk.id ? "↓ Starting..." : "↓ Get"}</button>
+                      >{needsAudit ? "audit" : downloadingId === sk.id ? "↓ Preparing…" : "↓ Get"}</button>
                     </div>
                   </div>
                 </div>
@@ -436,6 +475,8 @@ export default function Home() {
           ))}
         </div>
       </footer>
+
+      <SkillModal skill={activeSkill} onClose={() => setActiveSkill(null)} />
     </div>
   );
 }

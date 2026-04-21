@@ -5,6 +5,91 @@ import { useAuth } from "@/lib/auth";
 import { uploadSkillPackage, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
 
+// ── Description validators (spec §1 + §2) ──────────────────
+// Descriptions must be concrete, non-marketing, and semantically related to
+// the skill title. These run at write-time in the publish flow.
+
+const MARKETING_WORDS = [
+  "revolutionary",
+  "game-changing",
+  "best-in-class",
+  "next-generation",
+  "cutting-edge",
+  "world-class",
+  "powerful",
+  "amazing",
+];
+
+// Conservative English stopword list for the title/description overlap check.
+const STOPWORDS = new Set([
+  "a", "an", "and", "as", "at", "be", "by", "for", "from", "has", "have", "in",
+  "into", "is", "it", "its", "of", "on", "or", "that", "the", "this", "to",
+  "was", "were", "will", "with", "your", "you", "skill", "skills",
+]);
+
+function contentWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+  );
+}
+
+export interface DescriptionValidation {
+  blocking: string | null;
+  warning: string | null;
+}
+
+export function validateDescription(
+  title: string,
+  description: string
+): DescriptionValidation {
+  const trimmed = description.trim();
+
+  if (trimmed.length > 0 && trimmed.length < 40) {
+    return {
+      blocking: "Describe what the skill does, who it's for, and the problem it solves.",
+      warning: null,
+    };
+  }
+
+  if (trimmed.length > 500) {
+    return {
+      blocking: "Keep the description focused. Details belong in SKILL.md.",
+      warning: null,
+    };
+  }
+
+  if (trimmed.length >= 40 && title.trim().length > 0) {
+    const titleWords = contentWords(title);
+    const descWords = contentWords(trimmed);
+    let overlap = 0;
+    titleWords.forEach((w) => {
+      if (descWords.has(w)) overlap += 1;
+    });
+    // Only enforce when the title itself has at least 2 content words to
+    // compare against — single-word titles can't meaningfully overlap.
+    if (titleWords.size >= 2 && overlap < 2) {
+      return {
+        blocking: "The description does not appear to describe the skill title.",
+        warning: null,
+      };
+    }
+  }
+
+  const lowered = trimmed.toLowerCase();
+  const marketingHit = MARKETING_WORDS.filter((w) => lowered.includes(w));
+  if (marketingHit.length > 0) {
+    return {
+      blocking: null,
+      warning: `Descriptions should inform, not impress. Consider revising: ${marketingHit.join(", ")}.`,
+    };
+  }
+
+  return { blocking: null, warning: null };
+}
+
 // Publisher's skills — fetched from Supabase when auth is active, mock data as fallback
 function usePublisherSkills() {
   const [skills, setSkills] = useState(MOCK_SKILLS);
@@ -94,6 +179,7 @@ export default function Publish() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSkillTarget, setUploadSkillTarget] = useState<string>("");
   const [uploadVersion, setUploadVersion] = useState("1.0.0");
+  const [uploadDescription, setUploadDescription] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -125,11 +211,38 @@ export default function Publish() {
     setUploadStep(1);
   };
 
+  // Pre-fill the description input with the skill's current description when
+  // the creator picks a target skill. They can edit/keep it; empty means no
+  // change on upload.
+  useEffect(() => {
+    if (!uploadSkillTarget) {
+      setUploadDescription("");
+      return;
+    }
+    const target = claimedSkills.find((s) => s.id === uploadSkillTarget);
+    if (target) {
+      setUploadDescription(target.description || "");
+    }
+  }, [uploadSkillTarget, claimedSkills]);
+
   const handleUpload = async () => {
     if (!uploadFile || !user || !uploadSkillTarget) {
       setUploadError("Please select a skill to upload for");
       return;
     }
+
+    // Run description validation (spec §1 + §2).
+    const targetSkill = claimedSkills.find((s) => s.id === uploadSkillTarget);
+    const titleForValidation = targetSkill?.name || "";
+    const descForValidation = uploadDescription.trim();
+    if (descForValidation.length > 0) {
+      const { blocking } = validateDescription(titleForValidation, descForValidation);
+      if (blocking) {
+        setUploadError(blocking);
+        return;
+      }
+    }
+
     setUploadProgress(10);
     const result = await uploadSkillPackage(
       uploadSkillTarget,
@@ -138,6 +251,13 @@ export default function Publish() {
       uploadVersion
     );
     if (result.success) {
+      // Persist the revised description, if the creator provided one.
+      if (descForValidation.length > 0) {
+        await supabase
+          .from("skills")
+          .update({ description: descForValidation })
+          .eq("id", uploadSkillTarget);
+      }
       setUploadProgress(100);
       setUploadStep(2);
     } else {
@@ -154,6 +274,7 @@ export default function Publish() {
     setUploadError(null);
     setUploadSkillTarget("");
     setUploadVersion("1.0.0");
+    setUploadDescription("");
   };
 
   return (
@@ -639,6 +760,56 @@ export default function Publish() {
                       }}
                     />
                   </div>
+
+                  {uploadSkillTarget && (() => {
+                    const targetSkill = claimedSkills.find((s) => s.id === uploadSkillTarget);
+                    const title = targetSkill?.name || "";
+                    const validation = uploadDescription.trim().length > 0
+                      ? validateDescription(title, uploadDescription)
+                      : { blocking: null, warning: null };
+                    const len = uploadDescription.trim().length;
+                    return (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                          <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                            Description (optional — edit)
+                          </div>
+                          <div style={{ fontSize: 10, fontFamily: M, color: len > 500 ? "#fca5a5" : "rgba(255,255,255,0.25)" }}>
+                            {len} / 500
+                          </div>
+                        </div>
+                        <textarea
+                          value={uploadDescription}
+                          onChange={(e) => setUploadDescription(e.target.value)}
+                          placeholder="Describe what this skill does, who it's for, and the problem it solves."
+                          rows={4}
+                          style={{
+                            width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
+                            background: "rgba(255,255,255,0.03)",
+                            border: `1px solid ${validation.blocking ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.08)"}`,
+                            color: "#fff", outline: "none", fontFamily: F, lineHeight: 1.5,
+                            resize: "vertical",
+                          }}
+                        />
+                        {validation.blocking && (
+                          <div style={{
+                            marginTop: 6, fontSize: 11, fontFamily: M,
+                            color: "rgba(252,165,165,0.9)",
+                          }}>
+                            {validation.blocking}
+                          </div>
+                        )}
+                        {!validation.blocking && validation.warning && (
+                          <div style={{
+                            marginTop: 6, fontSize: 11, fontFamily: M,
+                            color: "rgba(252,211,77,0.85)",
+                          }}>
+                            ⚠ {validation.warning}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {uploadProgress > 0 && uploadProgress < 100 && (
                     <div style={{ marginTop: 16 }}>

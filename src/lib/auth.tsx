@@ -6,6 +6,7 @@ interface ClaimableSkill {
   id: string;
   name: string;
   slug: string;
+  description: string | null;
   install_count: number;
   avg_rating: number | null;
 }
@@ -75,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Skills by this author that are unclaimed
     const { data: claimable } = await supabase
       .from("v_skill_catalog")
-      .select("id, name, slug, install_count, avg_rating")
+      .select("id, name, slug, description, install_count, avg_rating")
       .eq("author_username", githubUsername)
       .eq("is_claimed", false);
 
@@ -84,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Skills already claimed by this user
     const { data: claimed } = await supabase
       .from("v_skill_catalog")
-      .select("id, name, slug, install_count, avg_rating")
+      .select("id, name, slug, description, install_count, avg_rating")
       .eq("author_username", githubUsername)
       .eq("is_claimed", true);
 

@@ -133,13 +133,26 @@ export async function recordInstall(skillId: string, method: string = "web") {
 }
 
 // ── Download a skill ────────────────────────────────────────
+// The download flow must stay fully inside /skiyu. We never use window.open,
+// we never navigate to a third-party page, and we never land on
+// download-directory.github.io. All zips are fetched as a Blob and handed to
+// the browser via <a download>, so the user stays on the current page.
+//
+// Source priority:
+//   1. Supabase Storage (when a publisher has uploaded a packaged zip)
+//   2. The skills.download_url (typically a GitHub Codeload archive URL)
+//
+// Note on CORS: github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip
+// redirects to codeload.github.com, which *does* send the permissive CORS
+// headers required to fetch as a blob from the browser. If a future URL
+// source doesn't, downloadSkill returns a descriptive error and the UI
+// surfaces it — we do NOT silently fall back to window.open.
 export async function downloadSkill(
   skillId: string,
   skillName: string,
   userId?: string | null
-): Promise<{ success: boolean; url?: string; error?: string }> {
+): Promise<{ success: boolean; error?: string }> {
   try {
-    // Resolve the right download URL (storage if available, else GitHub)
     const { data, error } = await supabase.rpc("resolve_download_url", {
       target_skill_id: skillId,
     });
@@ -149,13 +162,11 @@ export async function downloadSkill(
     }
 
     const { url, method, file_size } = data[0];
-    if (!url) return { success: false, error: "This skill has no download URL configured" };
+    if (!url) {
+      return { success: false, error: "This skill has no download URL configured" };
+    }
 
-    // For GitHub redirects, verify the URL is reachable before navigating
-    // (HEAD requests to github.com are blocked by CORS, so we rely on the redirect
-    // and trust the URL — real scraper will validate URLs at ingestion time)
-
-    // Log the download event (non-blocking)
+    // Log the download event (non-blocking).
     supabase
       .from("downloads")
       .insert({
@@ -168,28 +179,88 @@ export async function downloadSkill(
       })
       .then(() => {});
 
-    // Trigger the download — use window.open so GitHub 404s open in a new tab
-    // and don't replace the current page
-    const slug = skillName.toLowerCase().replace(/\s+/g, "-");
+    const slug = skillName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const filename = `${slug}.zip`;
 
-    if (method === "storage") {
-      // Supabase Storage serves the file directly — use download attribute
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${slug}.zip`;
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
-      // GitHub redirect — open in new tab so the main app stays usable
-      window.open(url, "_blank", "noopener,noreferrer");
+    // Fetch as blob so the browser treats it as an inline download rather
+    // than a navigation. This keeps the user fully inside /skiyu.
+    const res = await fetch(url, {
+      method: "GET",
+      credentials: "omit",
+      redirect: "follow",
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `Download failed (${res.status}). The source may have moved or be temporarily unavailable.`,
+      };
     }
 
-    return { success: true, url };
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Give the browser a tick to start the save before revoking.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+
+    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Download failed" };
+    // A CORS error here is the most likely cause of an unexpected throw.
+    // Surface it clearly instead of opening a new tab, which would break
+    // the in-marketplace experience the spec requires.
+    return {
+      success: false,
+      error: err?.message || "Download failed — please try again",
+    };
   }
+}
+
+// ── Fetch extra skill detail for the modal ──────────────────
+// The catalog view is intentionally slim. The modal needs readme_content,
+// frontmatter, skill_md_content, and skill_folder_path — we pull those
+// here on demand when a card is clicked.
+export function useSkillDetail(skillId: string | null) {
+  const [detail, setDetail] = useState<{
+    frontmatter: Record<string, unknown> | null;
+    readme_content: string | null;
+    skill_md_content: string | null;
+    skill_folder_path: string | null;
+    github_url: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!skillId) {
+      setDetail(null);
+      return;
+    }
+    setLoading(true);
+    supabase
+      .from("skills")
+      .select("frontmatter, readme_content, skill_md_content, skill_folder_path, github_url")
+      .eq("id", skillId)
+      .single()
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setDetail({
+            frontmatter: (data.frontmatter as Record<string, unknown> | null) ?? null,
+            readme_content: data.readme_content ?? null,
+            skill_md_content: data.skill_md_content ?? null,
+            skill_folder_path: data.skill_folder_path ?? null,
+            github_url: data.github_url ?? null,
+          });
+        }
+        setLoading(false);
+      });
+  }, [skillId]);
+
+  return { detail, loading };
 }
 
 // ── Upload a zip package (for publishers) ───────────────────

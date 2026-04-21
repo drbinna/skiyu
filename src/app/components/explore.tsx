@@ -3,6 +3,8 @@ import { useNavigate } from "react-router";
 import { useSkills, useCategories, useCategoryCounts, downloadSkill, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
+import SkillModal from "./skill-modal";
+import type { SkillCatalogItem } from "@/lib/types";
 
 const SORT_OPTIONS = [
   { id: "relevance", label: "Relevance" },
@@ -32,6 +34,7 @@ export default function Explore() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [activeSkill, setActiveSkill] = useState<SkillCatalogItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -281,20 +284,50 @@ export default function Explore() {
             ) : filtered.map(s => {
               const color = "#22d3ee";
               const catLabel = s.category_name || "Uncategorized";
+              const needsAudit = s.quality_tier === "needs_audit";
               return (
-                <div key={s.id} className="skill-card-grid" style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  borderTop: `2px solid ${color}`,
-                  borderRadius: 10,
-                  padding: 20,
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 160,
-                }}>
+                <div
+                  key={s.id}
+                  className="skill-card-grid"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveSkill(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setActiveSkill(s);
+                    }
+                  }}
+                  style={{
+                    background: needsAudit ? "rgba(245,158,11,0.04)" : "rgba(255,255,255,0.02)",
+                    border: needsAudit
+                      ? "1px solid rgba(245,158,11,0.2)"
+                      : "1px solid rgba(255,255,255,0.06)",
+                    borderTop: needsAudit
+                      ? "2px solid rgba(245,158,11,0.5)"
+                      : `2px solid ${color}`,
+                    borderRadius: 10,
+                    padding: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 160,
+                    opacity: needsAudit ? 0.7 : 1,
+                  }}
+                >
                   {/* top */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, fontFamily: F, letterSpacing: "-0.01em" }}>{s.name}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: F, letterSpacing: "-0.01em" }}>{s.name}</span>
+                      {needsAudit && (
+                        <span style={{
+                          fontSize: 9, fontFamily: M, letterSpacing: "0.08em", textTransform: "uppercase" as const,
+                          padding: "2px 6px", borderRadius: 4,
+                          background: "rgba(245,158,11,0.15)",
+                          color: "#fcd34d",
+                          whiteSpace: "nowrap",
+                        }}>⚠ audit</span>
+                      )}
+                    </div>
                     <span style={{
                       fontSize: 11, fontFamily: M, fontWeight: 600,
                       padding: "3px 10px", borderRadius: 100,
@@ -336,38 +369,50 @@ export default function Explore() {
                         color: color,
                       }}>{catLabel}</span>
                       <button
-                        onClick={(e) => handleDownload(e, s.id, s.name)}
-                        disabled={downloadingId === s.id}
-                        title={`Download zip${s.package_size_bytes ? ` (${formatFileSize(s.package_size_bytes)})` : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (needsAudit) return;
+                          handleDownload(e, s.id, s.name);
+                        }}
+                        disabled={downloadingId === s.id || needsAudit}
+                        title={needsAudit
+                          ? "Audit in progress"
+                          : `Download zip${s.package_size_bytes ? ` (${formatFileSize(s.package_size_bytes)})` : ""}`}
                         style={{
-                          background: downloadingId === s.id ? "#fff" : "rgba(255,255,255,0.06)",
-                          color: downloadingId === s.id ? "#000" : "#fff",
+                          background: needsAudit
+                            ? "rgba(255,255,255,0.02)"
+                            : downloadingId === s.id ? "#fff" : "rgba(255,255,255,0.06)",
+                          color: needsAudit
+                            ? "rgba(255,255,255,0.25)"
+                            : downloadingId === s.id ? "#000" : "#fff",
                           border: "1px solid rgba(255,255,255,0.08)",
                           padding: "4px 10px",
                           borderRadius: 6,
                           fontSize: 11,
                           fontFamily: M,
                           fontWeight: 600,
-                          cursor: downloadingId === s.id ? "default" : "pointer",
+                          cursor: needsAudit || downloadingId === s.id ? "not-allowed" : "pointer",
                           display: "flex",
                           alignItems: "center",
                           gap: 4,
                           transition: "all 0.2s",
                         }}
                         onMouseEnter={(e) => {
-                          if (downloadingId !== s.id) {
+                          if (!needsAudit && downloadingId !== s.id) {
                             (e.currentTarget as HTMLButtonElement).style.background = "#fff";
                             (e.currentTarget as HTMLButtonElement).style.color = "#000";
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (downloadingId !== s.id) {
+                          if (!needsAudit && downloadingId !== s.id) {
                             (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
                             (e.currentTarget as HTMLButtonElement).style.color = "#fff";
                           }
                         }}
                       >
-                        {downloadingId === s.id ? "↓ Starting..." : "↓ Download"}
+                        {needsAudit
+                          ? "audit"
+                          : downloadingId === s.id ? "↓ Preparing…" : "↓ Download"}
                       </button>
                     </div>
                   </div>
@@ -399,6 +444,8 @@ export default function Explore() {
           </div>
         </main>
       </div>
+
+      <SkillModal skill={activeSkill} onClose={() => setActiveSkill(null)} />
     </div>
   );
 }
