@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import JSZip from "jszip";
 import { supabase } from "./supabase";
 import type { Category, SkillCatalogItem } from "./types";
 
@@ -134,86 +135,200 @@ export async function recordInstall(skillId: string, method: string = "web") {
 
 // ── Download a skill ────────────────────────────────────────
 // The download flow must stay fully inside /skiyu. We never use window.open,
-// we never navigate to a third-party page, and we never land on
-// download-directory.github.io. All zips are fetched as a Blob and handed to
-// the browser via <a download>, so the user stays on the current page.
+// never navigate to a third-party page, and never land on
+// download-directory.github.io. The user stays on the current page.
 //
-// Source priority:
-//   1. Supabase Storage (when a publisher has uploaded a packaged zip)
-//   2. The skills.download_url (typically a GitHub Codeload archive URL)
+// Two sources, in priority order:
+//   1. Supabase Storage (when a publisher uploaded a packaged zip).
+//      We trust these URLs and stream them as blobs.
+//   2. A client-side zip built from the skill's GitHub subfolder.
+//      We call api.github.com/.../git/trees (CORS '*') once to list files,
+//      fetch each file from raw.githubusercontent.com (CORS '*'), and
+//      assemble a real zip with JSZip. Contains only the skill, not the
+//      whole repo.
 //
-// Note on CORS: github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip
-// redirects to codeload.github.com, which *does* send the permissive CORS
-// headers required to fetch as a blob from the browser. If a future URL
-// source doesn't, downloadSkill returns a descriptive error and the UI
-// surfaces it — we do NOT silently fall back to window.open.
+// GitHub archive URLs (codeload.github.com, /archive/refs/heads/...) are
+// NOT used here because their CORS header is scoped to
+// render.githubusercontent.com and the browser cannot read the blob body
+// from our origin. Any legacy download-directory.github.io URL in the DB
+// is ignored — those return HTML that macOS Archive Utility rejects.
+
+interface DownloadableSkill {
+  github_repo: string | null;
+  github_url: string | null;
+  skill_folder_path: string | null;
+  download_url: string | null;
+  download_method: string | null;
+}
+
+function parseBranchFromGithubUrl(url: string | null): string {
+  if (!url) return "main";
+  const match = url.match(/\/tree\/([^/]+)\//);
+  return match ? match[1] : "main";
+}
+
+function isSupabaseStorageUrl(url: string | null): boolean {
+  if (!url) return false;
+  // Supabase public storage URLs look like:
+  //   https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+  return /supabase\.co\/storage\/v1\/object\/public\//.test(url);
+}
+
+async function buildSubfolderZip(
+  repo: string,
+  branch: string,
+  folderPath: string
+): Promise<Blob> {
+  // 1) Get the tree at the given ref.
+  const treeUrl = `https://api.github.com/repos/${repo}/git/trees/${branch}?recursive=1`;
+  const treeRes = await fetch(treeUrl, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+
+  if (!treeRes.ok) {
+    // Retry on master if main didn't exist.
+    if (treeRes.status === 404 && branch === "main") {
+      return buildSubfolderZip(repo, "master", folderPath);
+    }
+    if (treeRes.status === 403) {
+      throw new Error(
+        "GitHub rate limit reached. Please try again in an hour, or sign in to lift the limit."
+      );
+    }
+    throw new Error(`GitHub tree fetch failed (${treeRes.status})`);
+  }
+
+  const tree = (await treeRes.json()) as {
+    tree?: Array<{ path: string; type: string; sha: string }>;
+    truncated?: boolean;
+  };
+
+  if (!tree.tree) {
+    throw new Error("GitHub tree response was empty");
+  }
+
+  const normalized = folderPath.replace(/^\/+|\/+$/g, "");
+  const prefix = normalized + "/";
+  const files = tree.tree.filter(
+    (e) => e.type === "blob" && (e.path === normalized || e.path.startsWith(prefix))
+  );
+
+  if (files.length === 0) {
+    throw new Error(`No files found at ${normalized}`);
+  }
+
+  // 2) Fetch each file from the raw CDN (no separate rate limit; CORS '*').
+  const zip = new JSZip();
+  const CONCURRENCY = 6;
+
+  async function worker(queue: typeof files) {
+    while (true) {
+      const item = queue.shift();
+      if (!item) return;
+      const rawUrl = `https://raw.githubusercontent.com/${repo}/${branch}/${item.path}`;
+      const r = await fetch(rawUrl);
+      if (!r.ok) {
+        throw new Error(`Fetch failed for ${item.path} (${r.status})`);
+      }
+      const bytes = await r.arrayBuffer();
+      // Rebase the path so the zip contains only the skill folder contents.
+      const relative = item.path === normalized
+        ? item.path.split("/").pop() || item.path
+        : item.path.slice(prefix.length);
+      zip.file(relative, bytes);
+    }
+  }
+
+  const queue = files.slice();
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker(queue))
+  );
+
+  return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
 export async function downloadSkill(
   skillId: string,
   skillName: string,
   userId?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data, error } = await supabase.rpc("resolve_download_url", {
-      target_skill_id: skillId,
-    });
+    const { data, error } = await supabase
+      .from("skills")
+      .select(
+        "github_repo, github_url, skill_folder_path, download_url, download_method"
+      )
+      .eq("id", skillId)
+      .single<DownloadableSkill>();
 
-    if (error || !data || data.length === 0) {
+    if (error || !data) {
       return { success: false, error: "No download available for this skill" };
     }
-
-    const { url, method, file_size } = data[0];
-    if (!url) {
-      return { success: false, error: "This skill has no download URL configured" };
-    }
-
-    // Log the download event (non-blocking).
-    supabase
-      .from("downloads")
-      .insert({
-        skill_id: skillId,
-        user_id: userId || null,
-        download_method: method,
-        file_size_bytes: file_size,
-        user_agent: navigator.userAgent,
-        referrer: document.referrer || null,
-      })
-      .then(() => {});
 
     const slug = skillName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     const filename = `${slug}.zip`;
 
-    // Fetch as blob so the browser treats it as an inline download rather
-    // than a navigation. This keeps the user fully inside /skiyu.
-    const res = await fetch(url, {
-      method: "GET",
-      credentials: "omit",
-      redirect: "follow",
-    });
+    // Log the download event (non-blocking). The exact source is recorded so
+    // we can measure how often each path is used.
+    const logDownload = (resolvedMethod: string, fileSize: number | null) => {
+      supabase
+        .from("downloads")
+        .insert({
+          skill_id: skillId,
+          user_id: userId || null,
+          download_method: resolvedMethod,
+          file_size_bytes: fileSize,
+          user_agent: navigator.userAgent,
+          referrer: document.referrer || null,
+        })
+        .then(() => {});
+    };
 
-    if (!res.ok) {
-      return {
-        success: false,
-        error: `Download failed (${res.status}). The source may have moved or be temporarily unavailable.`,
-      };
+    // Path 1: publisher-uploaded zip in Supabase Storage.
+    if (isSupabaseStorageUrl(data.download_url) && data.download_method === "storage") {
+      const res = await fetch(data.download_url as string, { credentials: "omit" });
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `Download failed (${res.status}). The package may have been moved.`,
+        };
+      }
+      const blob = await res.blob();
+      triggerBrowserDownload(blob, filename);
+      logDownload("storage", blob.size);
+      return { success: true };
     }
 
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = filename;
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Give the browser a tick to start the save before revoking.
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    // Path 2: build a zip from the skill's GitHub subfolder, client-side.
+    if (data.github_repo && data.skill_folder_path) {
+      const branch = parseBranchFromGithubUrl(data.github_url);
+      const blob = await buildSubfolderZip(
+        data.github_repo,
+        branch,
+        data.skill_folder_path
+      );
+      triggerBrowserDownload(blob, filename);
+      logDownload("github_subfolder_zip", blob.size);
+      return { success: true };
+    }
 
-    return { success: true };
+    return {
+      success: false,
+      error: "This skill has no valid download source configured",
+    };
   } catch (err: any) {
-    // A CORS error here is the most likely cause of an unexpected throw.
-    // Surface it clearly instead of opening a new tab, which would break
-    // the in-marketplace experience the spec requires.
     return {
       success: false,
       error: err?.message || "Download failed — please try again",
