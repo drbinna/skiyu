@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import NavAuth from "./nav-auth";
+import { preloadRoute } from "../routes";
 
 const M = "'Fragment Mono', monospace";
 const F = "'Erode', serif";
@@ -318,11 +319,19 @@ export default function Docs() {
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[
-            { label: "Explore", path: "/explore" },
-            { label: "Publish", path: "/publish" },
-            { label: "Docs", path: "/docs" },
+            { label: "Explore", path: "/explore" as const },
+            { label: "Publish", path: "/publish" as const },
+            { label: "Docs", path: "/docs" as const },
           ].map(l => (
-            <span key={l.label} className="nav-link" onClick={() => navigate(l.path)} style={{ color: l.label === "Docs" ? "#fff" : undefined, fontWeight: l.label === "Docs" ? 600 : 400 }}>{l.label}</span>
+            <span
+              key={l.label}
+              className="nav-link"
+              onClick={() => navigate(l.path)}
+              onMouseEnter={() => preloadRoute[l.path]?.()}
+              onFocus={() => preloadRoute[l.path]?.()}
+              tabIndex={0}
+              style={{ color: l.label === "Docs" ? "#fff" : undefined, fontWeight: l.label === "Docs" ? 600 : 400 }}
+            >{l.label}</span>
           ))}
         </div>
         <NavAuth />

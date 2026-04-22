@@ -5,6 +5,7 @@ import type { SkillCatalogItem } from "@/lib/types";
 import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
+import { preloadRoute } from "../routes";
 
 function NoiseOverlay() {
   const c = useRef<HTMLCanvasElement>(null);
@@ -196,11 +197,17 @@ export default function Home() {
         </div>
         <div style={{ display: "flex", gap: 36, fontSize: 13 }}>
           {[
-            { label: "Explore", path: "/explore" },
-            { label: "Publish", path: "/publish" },
-            { label: "Docs", path: "/docs" },
+            { label: "Explore", path: "/explore" as const },
+            { label: "Publish", path: "/publish" as const },
+            { label: "Docs", path: "/docs" as const },
           ].map(l => (
-            <span key={l.label} className="nav-item" onClick={() => navigate(l.path)}>{l.label}</span>
+            <span
+              key={l.label}
+              className="nav-item"
+              onClick={() => navigate(l.path)}
+              onMouseEnter={() => preloadRoute[l.path]?.()}
+              onFocus={() => preloadRoute[l.path]?.()}
+            >{l.label}</span>
           ))}
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -233,7 +240,7 @@ export default function Home() {
             ))}
           </div>
           <div className="e4" style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 44 }}>
-            <button className="btn-primary" onClick={() => navigate("/explore")} style={{ padding: "14px 36px", borderRadius: 8, fontSize: 14 }}>Explore Skills</button>
+            <button className="btn-primary" onClick={() => navigate("/explore")} onMouseEnter={() => preloadRoute["/explore"]()} onFocus={() => preloadRoute["/explore"]()} style={{ padding: "14px 36px", borderRadius: 8, fontSize: 14 }}>Explore Skills</button>
             <button className="btn-ghost" style={{ padding: "14px 36px", borderRadius: 8, fontSize: 14 }}>Publish Yours</button>
           </div>
           <div className="e5" style={{ marginTop: 48, maxWidth: 520, margin: "48px auto 0", position: "relative" }}>
@@ -426,7 +433,7 @@ export default function Home() {
             })}
           </div>
           <div style={{ textAlign: "center", marginTop: 48 }}>
-            <button className="btn-ghost" onClick={() => navigate("/explore")} style={{ padding: "12px 36px", borderRadius: 8, fontSize: 13, letterSpacing: "0.04em" }}>Browse All Skills →</button>
+            <button className="btn-ghost" onClick={() => navigate("/explore")} onMouseEnter={() => preloadRoute["/explore"]()} onFocus={() => preloadRoute["/explore"]()} style={{ padding: "12px 36px", borderRadius: 8, fontSize: 13, letterSpacing: "0.04em" }}>Browse All Skills →</button>
           </div>
         </div>
       </section>

@@ -5,6 +5,7 @@ import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
 import type { SkillCatalogItem } from "@/lib/types";
+import { preloadRoute } from "../routes";
 
 const SORT_OPTIONS = [
   { id: "relevance", label: "Relevance" },
@@ -35,6 +36,9 @@ export default function Explore() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<SkillCatalogItem | null>(null);
+  const [page, setPage] = useState(0);
+  const [accumulated, setAccumulated] = useState<SkillCatalogItem[]>([]);
+  const PAGE_SIZE = 30;
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -57,13 +61,36 @@ export default function Explore() {
     return () => clearTimeout(t);
   }, [query]);
 
-  // Fetch from Supabase
-  const { skills: filtered, loading, count } = useSkills({
+  // Reset pagination + accumulation whenever the filter set changes.
+  useEffect(() => {
+    setPage(0);
+    setAccumulated([]);
+  }, [debouncedQuery, cat, sort, licenseFilter]);
+
+  // Fetch from Supabase (paginated, 30 per page)
+  const { skills: pageSkills, loading, fetching, count } = useSkills({
     category: cat,
     search: debouncedQuery || undefined,
     sort,
     license: licenseFilter,
+    page,
+    pageSize: PAGE_SIZE,
   });
+
+  // Accumulate pages: whenever a new page's data arrives, append.
+  // Guard against dupes by skill id in case react-query replays.
+  useEffect(() => {
+    if (pageSkills.length === 0) return;
+    setAccumulated((prev) => {
+      if (page === 0) return pageSkills;
+      const seen = new Set(prev.map((s) => s.id));
+      const additions = pageSkills.filter((s) => !seen.has(s.id));
+      return additions.length > 0 ? [...prev, ...additions] : prev;
+    });
+  }, [pageSkills, page]);
+
+  const filtered = accumulated;
+  const hasMore = filtered.length < count;
   const { categories: dbCategories } = useCategories();
   const { counts: catCounts, total: totalSkills } = useCategoryCounts();
 
@@ -127,13 +154,16 @@ export default function Explore() {
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[
-            { label: "Explore", path: "/explore" },
-            { label: "Publish", path: "/publish" },
-            { label: "Docs", path: "/docs" },
+            { label: "Explore", path: "/explore" as const },
+            { label: "Publish", path: "/publish" as const },
+            { label: "Docs", path: "/docs" as const },
           ].map(l => (
             <span
               key={l.label}
               onClick={() => navigate(l.path)}
+              onMouseEnter={() => preloadRoute[l.path]?.()}
+              onFocus={() => preloadRoute[l.path]?.()}
+              tabIndex={0}
               style={{ cursor: "pointer", color: l.label === "Explore" ? "#fff" : undefined, fontWeight: l.label === "Explore" ? 600 : 400 }}
             >{l.label}</span>
           ))}
@@ -420,6 +450,40 @@ export default function Explore() {
               );
             })}
           </div>
+
+          {/* Load more */}
+          {!loading && filtered.length > 0 && hasMore && (
+            <div style={{ padding: "24px", textAlign: "center" }}>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={fetching}
+                style={{
+                  padding: "10px 28px",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: fetching ? "rgba(255,255,255,0.3)" : "#fff",
+                  fontSize: 12,
+                  fontFamily: M,
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  cursor: fetching ? "wait" : "pointer",
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (!fetching) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.08)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!fetching) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)";
+                }}
+              >
+                {fetching ? "Loading…" : `Load ${Math.min(PAGE_SIZE, count - filtered.length)} more`}
+              </button>
+              <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.2)", marginTop: 10 }}>
+                Showing {filtered.length} of ~{count}
+              </div>
+            </div>
+          )}
 
           {!loading && filtered.length === 0 && (
             <div style={{ padding: "80px 24px", textAlign: "center" }}>

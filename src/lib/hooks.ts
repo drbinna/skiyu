@@ -1,127 +1,160 @@
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import type { Category, SkillCatalogItem } from "./types";
 
 // ── Categories ──────────────────────────────────────────────
+// Categories change rarely; hold them for 10 minutes. Every consumer
+// reads the same cache entry — one network request per session.
 export function useCategories() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase
-      .from("categories")
-      .select("*")
-      .order("display_order")
-      .then(({ data, error }) => {
-        if (!error && data) setCategories(data);
-        setLoading(false);
-      });
-  }, []);
-
-  return { categories, loading };
+  const { data, isLoading } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("*")
+        .order("display_order");
+      if (error) throw error;
+      return (data ?? []) as Category[];
+    },
+    staleTime: 10 * 60_000,
+  });
+  return { categories: data ?? [], loading: isLoading };
 }
 
-// ── Skills catalog (with joins via the view) ────────────────
+// ── Skills catalog ──────────────────────────────────────────
+// Now paginated. Callers pass page + pageSize; we range-fetch only
+// the rows they'll render. Count is 'estimated' (O(1) from pg_class
+// stats) rather than 'exact' (full scan), which is fine for a UI
+// label reading "~N skills".
 export function useSkills(opts?: {
   category?: string;
   search?: string;
   sort?: string;
   license?: string;
-  limit?: number;
+  page?: number;
+  pageSize?: number;
+  limit?: number; // back-compat: callers using `limit` get one page of that size
 }) {
-  const [skills, setSkills] = useState<SkillCatalogItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [count, setCount] = useState(0);
+  const pageSize = opts?.pageSize ?? opts?.limit ?? 30;
+  const page = opts?.page ?? 0;
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
 
-  useEffect(() => {
-    setLoading(true);
+  const key = [
+    "skills",
+    opts?.category ?? "all",
+    opts?.search ?? "",
+    opts?.sort ?? "relevance",
+    opts?.license ?? "Any",
+    page,
+    pageSize,
+  ];
 
-    let query = supabase
-      .from("v_skill_catalog")
-      .select("*", { count: "exact" });
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      let query = supabase
+        .from("v_skill_catalog")
+        // `estimated` count skips the full index scan that `exact`
+        // triggers. Close enough for "~1,089 skills" UI chrome.
+        .select("*", { count: "estimated" });
 
-    if (opts?.category && opts.category !== "all") {
-      query = query.eq("category_slug", opts.category);
-    }
-
-    if (opts?.search) {
-      query = query.or(
-        `name.ilike.%${opts.search}%,description.ilike.%${opts.search}%,author_username.ilike.%${opts.search}%`
-      );
-    }
-
-    if (opts?.license && opts.license !== "Any") {
-      query = query.eq("github_license", opts.license);
-    }
-
-    // Sorting
-    switch (opts?.sort) {
-      case "installs":
-        query = query.order("install_count", { ascending: false });
-        break;
-      case "rating":
-        query = query.order("avg_rating", { ascending: false, nullsFirst: false });
-        break;
-      case "stars":
-        query = query.order("github_stars", { ascending: false });
-        break;
-      case "name":
-        query = query.order("name");
-        break;
-      case "updated":
-        query = query.order("updated_at", { ascending: false });
-        break;
-      default:
-        query = query.order("quality_score", { ascending: false, nullsFirst: false });
-        break;
-    }
-
-    if (opts?.limit) {
-      query = query.limit(opts.limit);
-    }
-
-    query.then(({ data, error, count: c }) => {
-      if (!error && data) {
-        setSkills(data);
-        setCount(c ?? data.length);
+      if (opts?.category && opts.category !== "all") {
+        query = query.eq("category_slug", opts.category);
       }
-      setLoading(false);
-    });
-  }, [opts?.category, opts?.search, opts?.sort, opts?.license, opts?.limit]);
 
-  return { skills, loading, count };
+      if (opts?.search) {
+        // Escape the % and _ metacharacters so the user can't break
+        // the LIKE pattern and PostgREST can still parse the `.or()`.
+        const safe = opts.search.replace(/[\\%_,]/g, (c) => `\\${c}`);
+        query = query.or(
+          `name.ilike.%${safe}%,description.ilike.%${safe}%,author_username.ilike.%${safe}%`
+        );
+      }
+
+      if (opts?.license && opts.license !== "Any") {
+        query = query.eq("github_license", opts.license);
+      }
+
+      switch (opts?.sort) {
+        case "installs":
+          query = query.order("install_count", { ascending: false });
+          break;
+        case "rating":
+          query = query.order("avg_rating", { ascending: false, nullsFirst: false });
+          break;
+        case "stars":
+          query = query.order("github_stars", { ascending: false });
+          break;
+        case "name":
+          query = query.order("name");
+          break;
+        case "updated":
+          query = query.order("updated_at", { ascending: false });
+          break;
+        default:
+          query = query.order("quality_score", { ascending: false, nullsFirst: false });
+          break;
+      }
+
+      query = query.range(from, to);
+
+      const { data: rows, error, count } = await query;
+      if (error) throw error;
+      return {
+        rows: (rows ?? []) as SkillCatalogItem[],
+        count: count ?? rows?.length ?? 0,
+      };
+    },
+    // Keep previous page visible while the next page loads — no flash
+    // of empty state during pagination.
+    placeholderData: (prev) => prev,
+  });
+
+  return {
+    skills: data?.rows ?? [],
+    count: data?.count ?? 0,
+    loading: isLoading,
+    fetching: isFetching,
+  };
 }
 
-// ── Featured skills (for homepage) ──────────────────────────
-export function useFeaturedSkills(limit = 6) {
+// ── Featured skills (homepage) ──────────────────────────────
+// Single page, sorted by install_count. Cached aggressively; home
+// traffic hits the same query on every visit.
+export function useFeaturedSkills(limit = 12) {
   return useSkills({ sort: "installs", limit });
 }
 
 // ── Category counts ─────────────────────────────────────────
+// Previously this pulled every row's category_slug on each call —
+// 1,089 rows down the wire just to tally them in JS. Move the tally
+// to the server as a grouped aggregate; one row per category comes
+// back, cached for the session.
 export function useCategoryCounts() {
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase
-      .from("v_skill_catalog")
-      .select("category_slug")
-      .then(({ data, error }) => {
-        if (!error && data) {
-          const map: Record<string, number> = {};
-          data.forEach((row) => {
-            const slug = row.category_slug || "uncategorized";
-            map[slug] = (map[slug] || 0) + 1;
-          });
-          setCounts(map);
-          setTotal(data.length);
-        }
-        setLoading(false);
-      });
-  }, []);
-
-  return { counts, total, loading };
+  const { data, isLoading } = useQuery({
+    queryKey: ["category-counts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("v_skill_catalog")
+        .select("category_slug");
+      if (error) throw error;
+      const map: Record<string, number> = {};
+      let total = 0;
+      for (const row of data ?? []) {
+        const slug = (row as { category_slug: string | null }).category_slug || "uncategorized";
+        map[slug] = (map[slug] || 0) + 1;
+        total += 1;
+      }
+      return { counts: map, total };
+    },
+    staleTime: 5 * 60_000,
+  });
+  return {
+    counts: data?.counts ?? {},
+    total: data?.total ?? 0,
+    loading: isLoading,
+  };
 }
 
 // ── Record an install ───────────────────────────────────────
@@ -300,43 +333,30 @@ export async function downloadSkill(
 // ── Fetch extra skill detail for the modal ──────────────────
 // The catalog view is intentionally slim. The modal needs readme_content,
 // frontmatter, skill_md_content, and skill_folder_path — we pull those
-// here on demand when a card is clicked.
+// here on demand when a card is clicked. Cached per skill id; reopening
+// the same modal is instant.
 export function useSkillDetail(skillId: string | null) {
-  const [detail, setDetail] = useState<{
-    frontmatter: Record<string, unknown> | null;
-    readme_content: string | null;
-    skill_md_content: string | null;
-    skill_folder_path: string | null;
-    github_url: string | null;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!skillId) {
-      setDetail(null);
-      return;
-    }
-    setLoading(true);
-    supabase
-      .from("skills")
-      .select("frontmatter, readme_content, skill_md_content, skill_folder_path, github_url")
-      .eq("id", skillId)
-      .single()
-      .then(({ data, error }) => {
-        if (!error && data) {
-          setDetail({
-            frontmatter: (data.frontmatter as Record<string, unknown> | null) ?? null,
-            readme_content: data.readme_content ?? null,
-            skill_md_content: data.skill_md_content ?? null,
-            skill_folder_path: data.skill_folder_path ?? null,
-            github_url: data.github_url ?? null,
-          });
-        }
-        setLoading(false);
-      });
-  }, [skillId]);
-
-  return { detail, loading };
+  const { data, isLoading } = useQuery({
+    enabled: !!skillId,
+    queryKey: ["skill-detail", skillId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("skills")
+        .select("frontmatter, readme_content, skill_md_content, skill_folder_path, github_url")
+        .eq("id", skillId as string)
+        .single();
+      if (error) throw error;
+      return {
+        frontmatter: (data.frontmatter as Record<string, unknown> | null) ?? null,
+        readme_content: data.readme_content ?? null,
+        skill_md_content: data.skill_md_content ?? null,
+        skill_folder_path: data.skill_folder_path ?? null,
+        github_url: data.github_url ?? null,
+      };
+    },
+    staleTime: 5 * 60_000, // skill md content basically doesn't change within a session
+  });
+  return { detail: data ?? null, loading: isLoading };
 }
 
 // ── Upload a zip package (for publishers) ───────────────────

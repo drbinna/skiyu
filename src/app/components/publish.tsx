@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { uploadSkillPackage, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
+import { preloadRoute } from "../routes";
 
 // ── Description validators (spec §1 + §2) ──────────────────
 // Descriptions must be concrete, non-marketing, and semantically related to
@@ -311,11 +312,18 @@ export default function Publish() {
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[
-            { label: "Explore", path: "/explore" },
-            { label: "Publish", path: "/publish" },
-            { label: "Docs", path: "/docs" },
+            { label: "Explore", path: "/explore" as const },
+            { label: "Publish", path: "/publish" as const },
+            { label: "Docs", path: "/docs" as const },
           ].map(l => (
-            <span key={l.label} onClick={() => navigate(l.path)} style={{ cursor: "pointer", color: l.label === "Publish" ? "#fff" : undefined, fontWeight: l.label === "Publish" ? 600 : 400 }}>{l.label}</span>
+            <span
+              key={l.label}
+              onClick={() => navigate(l.path)}
+              onMouseEnter={() => preloadRoute[l.path]?.()}
+              onFocus={() => preloadRoute[l.path]?.()}
+              tabIndex={0}
+              style={{ cursor: "pointer", color: l.label === "Publish" ? "#fff" : undefined, fontWeight: l.label === "Publish" ? 600 : 400 }}
+            >{l.label}</span>
           ))}
         </div>
         <NavAuth />

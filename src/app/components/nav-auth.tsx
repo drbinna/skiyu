@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
+import { preloadRoute } from "../routes";
 
 const M = "'Fragment Mono', monospace";
 const F = "'Erode', serif";
@@ -170,6 +171,13 @@ export default function NavAuth() {
                 onMouseEnter={e => {
                   (e.target as HTMLElement).style.background = "rgba(255,255,255,0.04)";
                   (e.target as HTMLElement).style.color = "#fff";
+                  // Prime the route's JS chunk while the user is still hovering.
+                  const loader = preloadRoute[item.href as keyof typeof preloadRoute];
+                  if (loader) loader();
+                }}
+                onFocus={() => {
+                  const loader = preloadRoute[item.href as keyof typeof preloadRoute];
+                  if (loader) loader();
                 }}
                 onMouseLeave={e => {
                   (e.target as HTMLElement).style.background = "transparent";
