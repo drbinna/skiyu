@@ -108,19 +108,28 @@ export default function SkillModal({ skill, onClose }: SkillModalProps) {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    // The dialog declares aria-modal="true", which instructs AT to ignore
-    // everything outside it. Most browsers only honor that when the siblings
-    // are actually `inert`. Mark every direct child of <body> except the
-    // dialog's own overlay as inert so axe-core and screen readers agree
-    // the background is inactive.
-    const overlay = dialogRef.current?.parentElement;
-    const siblings: HTMLElement[] = [];
-    Array.from(document.body.children).forEach((child) => {
-      if (child !== overlay && child instanceof HTMLElement) {
-        siblings.push(child);
-        child.setAttribute("inert", "");
+    // The dialog declares aria-modal="true". To actually isolate the
+    // background from focus and AT, we walk up from the overlay and at
+    // every ancestor mark the siblings (not the path itself) as inert.
+    // Walking just `document.body.children` isn't enough when the app
+    // is mounted under <div id="root">, because everything — including
+    // the modal — is the same body child.
+    const overlay = dialogRef.current?.parentElement; // the full-screen backdrop div
+    const inerted: HTMLElement[] = [];
+    if (overlay) {
+      let node: HTMLElement | null = overlay;
+      while (node && node !== document.body) {
+        const parent = node.parentElement;
+        if (!parent) break;
+        Array.from(parent.children).forEach((sibling) => {
+          if (sibling !== node && sibling instanceof HTMLElement && !sibling.hasAttribute("inert")) {
+            sibling.setAttribute("inert", "");
+            inerted.push(sibling);
+          }
+        });
+        node = parent;
       }
-    });
+    }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -154,7 +163,7 @@ export default function SkillModal({ skill, onClose }: SkillModalProps) {
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
-      siblings.forEach((el) => el.removeAttribute("inert"));
+      inerted.forEach((el) => el.removeAttribute("inert"));
       returnFocusRef.current?.focus?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
