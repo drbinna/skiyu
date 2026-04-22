@@ -427,7 +427,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <NavAuth />
       </nav>
-      {children}
+      <main id="main-content">{children}</main>
     </div>
   );
 }

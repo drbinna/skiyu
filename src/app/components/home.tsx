@@ -208,6 +208,7 @@ export default function Home() {
         </div>
       </nav>
 
+      <main id="main-content">
       {/* HERO */}
       <section style={{ position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "140px 24px 100px" }}>
         <DotField />
@@ -465,6 +466,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* FOOTER */}
       <footer style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "32px 48px", display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1000, margin: "0 auto" }}>

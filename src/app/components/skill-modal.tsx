@@ -108,6 +108,20 @@ export default function SkillModal({ skill, onClose }: SkillModalProps) {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    // The dialog declares aria-modal="true", which instructs AT to ignore
+    // everything outside it. Most browsers only honor that when the siblings
+    // are actually `inert`. Mark every direct child of <body> except the
+    // dialog's own overlay as inert so axe-core and screen readers agree
+    // the background is inactive.
+    const overlay = dialogRef.current?.parentElement;
+    const siblings: HTMLElement[] = [];
+    Array.from(document.body.children).forEach((child) => {
+      if (child !== overlay && child instanceof HTMLElement) {
+        siblings.push(child);
+        child.setAttribute("inert", "");
+      }
+    });
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -140,6 +154,7 @@ export default function SkillModal({ skill, onClose }: SkillModalProps) {
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      siblings.forEach((el) => el.removeAttribute("inert"));
       returnFocusRef.current?.focus?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
