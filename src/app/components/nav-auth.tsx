@@ -155,6 +155,7 @@ export default function NavAuth() {
             {[
               { label: "Dashboard", href: "/publish" },
               { label: "My skills", href: "/publish" },
+              ...(profile?.is_admin ? [{ label: "Review queue", href: "/admin/staged" }] : []),
               { label: "Settings", href: "#" },
             ].map(item => (
               <a

@@ -226,6 +226,99 @@ function inferAuthor(skillPath, repoOwner) {
   return repoOwner;
 }
 
+// ─── Acceptance gate ──────────────────────────────────────────────
+// Runs before a row is written to skills_staged. Purpose: keep the
+// admin review queue small and focused on ambiguous cases, not
+// obvious junk. Returns { rejected, reasons, warnings }.
+//
+// Reject ≠ warn:
+//   - `rejected: true` — the row is dropped entirely, never shown
+//     in the review UI. Use only for clearly non-skills.
+//   - `warnings` — non-blocking. The row lands in staging with these
+//     flags attached so the admin sees context at a glance.
+
+const MARKETING_WORDS = [
+  "revolutionary", "game-changing", "best-in-class", "next-generation",
+  "cutting-edge", "world-class", "powerful", "amazing",
+];
+
+const DEMO_REPOS = new Set([
+  "anthropics/claude-code",
+  "anthropics/claude-cookbooks",
+]);
+// `owner/repo:folder_path` pairs that we explicitly accept from demo
+// repos. Empty by default — add entries as real skills are identified.
+const DEMO_REPO_ALLOWLIST = new Set([]);
+
+const STOPWORDS = new Set([
+  "a","an","and","as","at","be","by","for","from","has","have","in",
+  "into","is","it","its","of","on","or","that","the","this","to",
+  "was","were","will","with","your","you","skill","skills",
+]);
+
+function contentWords(text) {
+  return new Set(
+    (text || "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+  );
+}
+
+function countWords(s) {
+  return (s || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+// Short non-crypto content hash so re-scrapes at the same commit produce
+// identical values and the staging UNIQUE constraint can dedupe.
+function simpleHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+function evaluateAcceptance({ name, description, body, frontmatter, folderPath, repo, license }) {
+  const reasons = [];
+  const warnings = [];
+
+  // HARD REJECTS — will never reach the review queue.
+  if (!frontmatter || !frontmatter.name) reasons.push("missing_frontmatter_name");
+  if (!description || description.trim().length < 40) reasons.push("description_under_40_chars");
+  if (description && description.trim().length > 500) reasons.push("description_over_500_chars");
+
+  const bodyLen = (body || "").trim().length;
+  if (bodyLen < 400) reasons.push("body_under_400_chars");
+  if (bodyLen > 50_000) reasons.push("body_over_50kb");
+
+  if (!license || license === "Unknown" || license === "No License" || license === "NOASSERTION") {
+    reasons.push("missing_license");
+  }
+
+  if (DEMO_REPOS.has(repo) && !DEMO_REPO_ALLOWLIST.has(`${repo}:${folderPath}`)) {
+    reasons.push("demo_repo_not_allowlisted");
+  }
+
+  // Title ↔ body alignment — at least 2 shared content words.
+  const titleWords = contentWords(name);
+  if (titleWords.size >= 2) {
+    const bodyWords = contentWords(body);
+    let overlap = 0;
+    titleWords.forEach((w) => { if (bodyWords.has(w)) overlap += 1; });
+    if (overlap < 2) reasons.push("title_not_in_body");
+  }
+
+  // SOFT WARNINGS — row is staged with flags shown to the admin.
+  const lowered = (description || "").toLowerCase();
+  const marketingHit = MARKETING_WORDS.filter((w) => lowered.includes(w));
+  if (marketingHit.length > 0) warnings.push(`marketing:${marketingHit.join(",")}`);
+  if (!frontmatter?.["allowed-tools"] && !frontmatter?.allowed_tools) warnings.push("no_allowed_tools");
+  if (bodyLen > 0 && bodyLen < 800) warnings.push("short_body");
+
+  return { rejected: reasons.length > 0, reasons, warnings };
+}
+
 // ─── Main scraper ──────────────────────────────────────────────────
 
 async function scrapeSource(source, upsertFn) {
@@ -291,6 +384,26 @@ async function scrapeSource(source, upsertFn) {
 
         if (quality < 30) return null;
 
+        // Apply acceptance gate before anything goes to staging. Rows
+        // that trip the auto-reject rules never occupy review attention.
+        const gate = evaluateAcceptance({
+          name,
+          description,
+          body,
+          frontmatter,
+          folderPath,
+          repo: `${source.owner}/${source.repo}`,
+          license,
+        });
+        if (gate.rejected) {
+          // Optional: surface in dry-run output so the operator can see
+          // how many rows each rule is catching.
+          if (DRY_RUN) {
+            console.log(`    ✗ rejected [${gate.reasons.join(", ")}] ${folderPath}`);
+          }
+          return null;
+        }
+
         return {
           source_id: source.slug,
           source_owner: source.owner,
@@ -304,10 +417,20 @@ async function scrapeSource(source, upsertFn) {
           license,
           github_url: `https://github.com/${source.owner}/${source.repo}/tree/${defaultBranch}/${folderPath}`,
           github_repo: `${source.owner}/${source.repo}`,
+          skill_folder_path: folderPath,
           github_stars: stars,
           quality_score: quality,
           quality_tier: qualityTier(quality),
-          download_url: `https://github.com/${source.owner}/${source.repo}/archive/refs/heads/${defaultBranch}.zip`,
+          // Raw content for the admin review view — NOT pushed to the live
+          // catalog until an admin approves.
+          skill_md_content: raw,
+          skill_md_hash: simpleHash(raw),
+          readme_content: hasReadme ? null : null, // README fetched on review-time, not here, to keep scrape fast
+          frontmatter,
+          instruction_word_count: countWords(body),
+          // Review signals
+          confidence_score: quality,
+          auto_flags: gate.warnings,
           compatibility: frontmatter.compatibility ? (Array.isArray(frontmatter.compatibility) ? frontmatter.compatibility : [frontmatter.compatibility]) : ["claude"],
           source: "scraped",
           sync_status: "active",
@@ -349,7 +472,7 @@ async function scrapeSource(source, upsertFn) {
 async function upsertToSupabase(skills) {
   if (skills.length === 0) return { inserted: 0, authors: 0 };
 
-  // Deduplicate by slug — keep highest quality per slug
+  // Deduplicate by slug — keep highest confidence per slug
   const bySlug = new Map();
   for (const s of skills) {
     const existing = bySlug.get(s.slug);
@@ -389,7 +512,10 @@ async function upsertToSupabase(skills) {
     .select("id, slug");
   const categoryMap = new Map(categories.map((c) => [c.slug, c.id]));
 
-  // 3. Upsert skills in batches of 100
+  // 3. Write to skills_staged (NOT live skills). Admin must approve
+  //    each row before it appears in /skiyu. The unique constraint on
+  //    (github_repo, skill_folder_path, github_commit_sha) makes
+  //    re-scrapes at the same commit idempotent.
   let inserted = 0;
   for (let i = 0; i < deduped.length; i += 100) {
     const batch = deduped.slice(i, i + 100).map((s) => ({
@@ -402,28 +528,31 @@ async function upsertToSupabase(skills) {
       github_repo: s.github_repo,
       github_stars: s.github_stars,
       github_license: s.license,
-      quality_score: s.quality_score,
-      quality_tier: s.quality_tier,
-      source: s.source,
-      sync_status: s.sync_status,
-      download_url: s.download_url,
-      download_method: "github_redirect",
-      compatibility: s.compatibility,
-      last_synced_at: s.last_synced_at,
+      skill_folder_path: s.skill_folder_path,
+      github_commit_sha: s.github_commit_sha || null,
+      skill_md_content: s.skill_md_content,
+      skill_md_hash: s.skill_md_hash,
+      readme_content: s.readme_content,
+      frontmatter: s.frontmatter,
+      instruction_word_count: s.instruction_word_count,
+      confidence_score: s.confidence_score,
+      auto_flags: s.auto_flags || [],
+      review_status: "pending",
     }));
 
     const { error: skillErr } = await supabase
-      .from("skills")
-      .upsert(batch, { onConflict: "slug" });
+      .from("skills_staged")
+      .upsert(batch, { onConflict: "github_repo,skill_folder_path,github_commit_sha" });
 
     if (skillErr) {
       console.error(`✗ Batch ${i / 100} failed:`, skillErr.message);
       continue;
     }
     inserted += batch.length;
-    process.stdout.write(`  ✓ inserted ${inserted}/${deduped.length}\r`);
+    process.stdout.write(`  ✓ staged ${inserted}/${deduped.length}\r`);
   }
   console.log();
+  console.log(`\n  ${inserted} skills staged for review. Approve at /admin/staged.`);
   return { inserted, authors: uniqueAuthors.length };
 }
 

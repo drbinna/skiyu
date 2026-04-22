@@ -21,6 +21,7 @@ interface AuthState {
     avatar_url: string | null;
     is_publisher: boolean;
     is_verified: boolean;
+    is_admin: boolean;
   } | null;
   loading: boolean;
   claimableSkills: ClaimableSkill[];
@@ -62,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from("users")
-      .select("id, github_username, display_name, avatar_url, is_publisher, is_verified")
+      .select("id, github_username, display_name, avatar_url, is_publisher, is_verified, is_admin")
       .eq("id", userId)
       .single();
     if (data) setProfile(data);
