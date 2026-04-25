@@ -433,9 +433,28 @@ export default function Home() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 32 }}>
             {[
-              { num: "01", title: "Install", desc: "One command. Instant power-up. Your Claude agent gains new capabilities in seconds — no config, no setup." },
-              { num: "02", title: "Collaborate", desc: "Fork any skill. Ship improvements. Built-in version control, pull requests, and co-maintainer workflows." },
-              { num: "03", title: "Publish", desc: "Share your skills with the community. Built-in validation, versioning, and a global marketplace with 12K+ engineers." },
+              {
+                num: "01",
+                title: "Install",
+                // Honest version: there's a paste step. We don't pretend it's instant.
+                desc: "Copy the install command from any skill. Paste it into your Claude Code terminal. The skill is available on the next prompt.",
+              },
+              {
+                num: "02",
+                title: "Inspect",
+                // Replaces the fictional "Collaborate" panel. Forking, version control,
+                // and PRs aren't built. Reading the source is — every skill links to its
+                // GitHub repo, and the source is the documentation.
+                desc: "Every skill is open source. The card links straight to the repo. Read what the skill does before you install it — the source is the documentation.",
+              },
+              {
+                num: "03",
+                title: "Publish",
+                // Describes the real review pipeline (skills_staged + admin Review Queue).
+                // Drops the "12K+ engineers" claim — actual count is 24 attributed authors,
+                // mostly from scrapes, not signups.
+                desc: "Submit your skill from a GitHub repo. Skiyu lints it against a public quality bar — frontmatter, license, description rigor — and reviews before it lands in the catalog.",
+              },
             ].map(s => (
               <div key={s.num} style={{ position: "relative" }}>
                 <div style={{ fontSize: 72, fontWeight: 700, color: "rgba(255,255,255,0.15)", lineHeight: 1, marginBottom: -20, fontFamily: "'Fragment Mono', monospace" }}>{s.num}</div>
@@ -455,8 +474,22 @@ export default function Home() {
             Ship your first skill<br /><span style={{ fontStyle: "italic", fontWeight: 400, color: "rgba(255,255,255,0.4)" }}>with / skiyu</span>
           </h2>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 44 }}>
-            <button className="btn-primary" style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}>Start Building — Free</button>
-            <button className="btn-ghost" style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}>Read the Docs</button>
+            <button
+              className="btn-primary"
+              onClick={() => navigate("/publish")}
+              onMouseEnter={() => preloadRoute["/publish"]()}
+              style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}
+            >
+              Publish a skill
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => navigate("/docs")}
+              onMouseEnter={() => preloadRoute["/docs"]()}
+              style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}
+            >
+              Read the docs
+            </button>
           </div>
         </div>
       </section>
