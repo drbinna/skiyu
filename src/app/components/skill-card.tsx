@@ -24,11 +24,10 @@ interface SkillCardProps {
  *
  * Layout: name → meta row (@author · category · license) → "what it does"
  * sentence → optional `// FOR` audience block (collapses when null) →
- * preview/updated line → primary "Deploy skill" + secondary ".zip" buttons.
+ * preview/updated line → primary "Run skill" + secondary ".zip" buttons.
  *
- * Hovering either button swaps the updated line for a literal preview of
- * what the action does. Clicking "Deploy skill" copies the install command
- * to the clipboard and flips the label for 1.6s.
+ * Hovering either button swaps the updated line for a preview of what the
+ * action does. Clicking "Run skill" opens the detail page action launcher.
  *
  * Source of truth: design-system handoff `skiyu-discovery-install.html`.
  */
@@ -39,14 +38,9 @@ export default function SkillCard({
   userId,
 }: SkillCardProps) {
   const navigate = useNavigate();
-  const [hover, setHover] = useState<null | "add" | "zip">(null);
-  const [copied, setCopied] = useState(false);
+  const [hover, setHover] = useState<null | "run" | "zip">(null);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Install command. Falls back to "@author/slug" when an explicit
-  // version isn't tracked yet — the CLI resolves "latest" implicitly.
-  const cmd = `claude code skills add @${skill.author_username ?? "anon"}/${skill.slug}`;
 
   // .zip preview details. package_size_bytes is sometimes unset on
   // scraper rows; fall back to a polite "—" rather than rendering "0 B".
@@ -60,27 +54,18 @@ export default function SkillCard({
   // Compute the preview line. Empty when no hover; the line is height-locked
   // so the layout never shifts.
   const previewLine =
-    hover === "add"
-      ? `→ ${cmd}`
+    hover === "run"
+      ? `→ open run setup for ${primaryActionLabel(skill)}`
       : hover === "zip"
         ? `→ ${zipPreview}`
         : `updated ${formatRelative(skill.updated_at)}`;
 
-  const handleDeploy = useCallback(
-    async (e: React.MouseEvent) => {
+  const handleRun = useCallback(
+    (e: React.MouseEvent) => {
       e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(cmd);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1600);
-      } catch {
-        // Clipboard API blocked (older browsers, insecure contexts).
-        // Surface the command so the user can copy it manually.
-        setError("Couldn't copy. Open the skill page for instructions.");
-        window.setTimeout(() => setError(null), 4000);
-      }
+      navigate(`/skills/${skill.slug}`);
     },
-    [cmd],
+    [navigate, skill.slug],
   );
 
   const handleZip = useCallback(
@@ -265,12 +250,12 @@ export default function SkillCard({
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
-          onClick={handleDeploy}
-          onMouseEnter={() => setHover("add")}
+          onClick={handleRun}
+          onMouseEnter={() => setHover("run")}
           onMouseLeave={() => setHover(null)}
-          onFocus={() => setHover("add")}
+          onFocus={() => setHover("run")}
           onBlur={() => setHover(null)}
-          aria-label={`Copy deploy command for ${skill.name}`}
+          aria-label={`Run ${skill.name}`}
           style={{
             flex: 1,
             padding: "10px 14px",
@@ -286,7 +271,7 @@ export default function SkillCard({
             transition: "background 150ms cubic-bezier(0.2, 0.8, 0.3, 1)",
           }}
         >
-          {copied ? "✓ Copied — paste to deploy" : "Deploy skill"}
+          Run skill
         </button>
         <button
           type="button"
@@ -328,6 +313,18 @@ function firstSentence(s: string): string {
   if (!s) return "";
   const m = s.match(/^[^.!?]*[.!?]/);
   return (m ? m[0] : s).trim();
+}
+
+function primaryActionLabel(skill: SkillCatalogItem): string {
+  const text = `${skill.name} ${skill.description} ${skill.category_slug ?? ""}`.toLowerCase();
+  if (text.includes("review") || text.includes("audit") || text.includes("analy"))
+    return "Run analysis";
+  if (text.includes("doc") || text.includes("write") || text.includes("generate"))
+    return "Generate output";
+  if (text.includes("deploy") || text.includes("infra") || text.includes("k8s"))
+    return "Prepare deployment";
+  if (text.includes("test") || text.includes("qa")) return "Build test plan";
+  return "Run action";
 }
 
 /** ISO timestamp → "3d ago" / "2w ago" / "5mo ago" / "2024".
