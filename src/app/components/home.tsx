@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { useFeaturedSkills, downloadSkill } from "@/lib/hooks";
+import { useFeaturedSkills, useCategoryCounts, downloadSkill } from "@/lib/hooks";
 import type { SkillCatalogItem } from "@/lib/types";
 import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
+import SkillCard from "./skill-card";
 import { preloadRoute } from "../routes";
 
 function NoiseOverlay() {
@@ -104,6 +105,22 @@ export default function Home() {
   const { user } = useAuth();
 
   const { skills: allSkills, loading: skillsLoading } = useFeaturedSkills(12);
+  const { counts: catalogCounts, total: catalogTotal } = useCategoryCounts();
+
+  // Hero stats — derived, not hard-coded.
+  // Skills: full catalog count from useCategoryCounts (loaded once, cached).
+  //   Falls back to the featured slice while loading.
+  // Publishers: unique authors visible across the featured skills. Imperfect
+  //   but cheap; a dedicated count would need another query, and the hero
+  //   stat is glanced at, not audited.
+  // Categories: count of category buckets the catalog spans.
+  const skillsCount = catalogTotal || allSkills.length;
+  const publisherCount = new Set(
+    allSkills.map((s) => s.author_username).filter(Boolean),
+  ).size;
+  const categoryCount = Object.keys(catalogCounts).filter(
+    (k) => k !== "uncategorized",
+  ).length;
 
   const handleDownload = async (e: React.MouseEvent, skillId: string, skillName: string) => {
     e.stopPropagation();
@@ -216,51 +233,147 @@ export default function Home() {
       </nav>
 
       <main id="main-content">
-      {/* HERO */}
-      <section style={{ position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "140px 24px 100px" }}>
+      {/* HERO — typography-only landing per design-system handoff
+        * skiyu-discovery-install.html. Pure type on the dot-grid backdrop
+        * with a radial vignette to focus the eye. No graphics, no mock
+        * terminals, no runtime references — skiyu is a curated marketplace,
+        * not an observability platform. */}
+      <section
+        style={{
+          position: "relative",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          padding: "120px 48px 80px",
+        }}
+      >
         <DotField />
-        <MorphBlob size={600} top="-5%" left="-10%" opacity={0.05} />
-        <MorphBlob size={450} top="40%" left="65%" opacity={0.035} />
-        <div style={{ position: "relative", zIndex: 2, maxWidth: 800 }}>
-          <div className="e1" style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.35em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 28, fontFamily: "'Fragment Mono', monospace" }}>
-            The #1 Marketplace for Claude Agent Skills
+        {/* Radial vignette darkens edges, focuses center column */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 80% 60% at 50% 40%, transparent, rgba(0,0,0,0.7))",
+            pointerEvents: "none",
+            zIndex: 1,
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: 1100,
+            margin: "0 auto",
+            width: "100%",
+          }}
+        >
+          <div
+            className="e1"
+            style={{
+              fontFamily: "'Fragment Mono', monospace",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: "rgba(255,255,255,0.25)",
+            }}
+          >
+            // skill engineering platform
           </div>
-          <h1 className="e2" style={{ fontSize: "clamp(48px, 8vw, 96px)", fontWeight: 700, lineHeight: 0.95, letterSpacing: "-0.04em" }}>
-            <span style={{ color: "rgba(255,255,255,0.15)" }}>/</span> skill engineering<br /><span style={{ fontStyle: "italic", fontWeight: 400 }}>made easy</span><span style={{ color: "rgba(255,255,255,0.15)" }}>.</span>
+          <h1
+            className="e2"
+            style={{
+              fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+              fontStyle: "italic",
+              fontWeight: 700,
+              fontSize: "clamp(48px, 8vw, 88px)",
+              letterSpacing: "-0.04em",
+              lineHeight: 0.95,
+              margin: "24px 0 0",
+              maxWidth: 1100,
+            }}
+          >
+            <span style={{ color: "#fff" }}>Skills, written well.</span>{" "}
+            <span style={{ color: "rgba(255,255,255,0.40)" }}>
+              Found, forked, or shipped from scratch.
+            </span>
           </h1>
-          <div className="e3" style={{ width: 60, height: 1, background: "rgba(255,255,255,0.3)", margin: "32px auto", animation: "expandLine 1s cubic-bezier(0.16,1,0.3,1) 0.6s both", transformOrigin: "center" }} />
-          <p className="e3" style={{ fontSize: 17, color: "rgba(255,255,255,0.4)", lineHeight: 1.7, maxWidth: 480, margin: "0 auto", fontWeight: 400 }}>
-            / skiyu lets you discover, install, and share Claude skills that power the next generation of workflows.
+          <p
+            className="e3"
+            style={{
+              fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+              fontStyle: "italic",
+              fontSize: 17,
+              lineHeight: 1.55,
+              color: "rgba(255,255,255,0.60)",
+              maxWidth: 560,
+              margin: "28px 0 0",
+            }}
+          >
+            Skiyu is where people who care about their craft publish skills
+            others can use. Every skill comes with an author, a license, and
+            a one-line install. Browse what's there, or write your own.
           </p>
-          <div className="e3 roll-in" style={{ marginTop: 16, perspective: 600 }}>
-            {"Welcome to / skiyu.".split(" ").map((word, i) => (
-              <span key={i} style={{ animationDelay: `${0.8 + i * 0.1}s`, marginRight: 6, color: "rgba(255,255,255,0.25)", fontSize: 15, fontWeight: 400 }}>
-                {word}
-              </span>
-            ))}
+          <div
+            className="e4"
+            style={{ display: "flex", gap: 12, marginTop: 36, flexWrap: "wrap" }}
+          >
+            <button
+              type="button"
+              onClick={() => navigate("/explore")}
+              onMouseEnter={() => preloadRoute["/explore"]()}
+              onFocus={() => preloadRoute["/explore"]()}
+              style={{
+                padding: "14px 28px",
+                background: "#fff",
+                color: "#000",
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 6,
+                fontFamily: "'Fragment Mono', monospace",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                cursor: "pointer",
+              }}
+            >
+              Browse skills
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/publish")}
+              onMouseEnter={() => preloadRoute["/publish"]()}
+              onFocus={() => preloadRoute["/publish"]()}
+              style={{
+                padding: "14px 28px",
+                background: "rgba(255,255,255,0.04)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 6,
+                fontFamily: "'Fragment Mono', monospace",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                cursor: "pointer",
+              }}
+            >
+              Start writing
+            </button>
           </div>
-          <div className="e4" style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 44 }}>
-            <button className="btn-primary" onClick={() => navigate("/explore")} onMouseEnter={() => preloadRoute["/explore"]()} onFocus={() => preloadRoute["/explore"]()} style={{ padding: "14px 36px", borderRadius: 8, fontSize: 14 }}>Explore Skills</button>
-            <button className="btn-ghost" style={{ padding: "14px 36px", borderRadius: 8, fontSize: 14 }}>Publish Yours</button>
+          <div
+            className="e5"
+            style={{
+              marginTop: 24,
+              fontFamily: "'Fragment Mono', monospace",
+              fontStyle: "italic",
+              fontSize: 13,
+              color: "rgba(255,255,255,0.40)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {skillsCount.toLocaleString()} skills · {publisherCount} publishers · {categoryCount} categories
           </div>
-          <div className="e5" style={{ marginTop: 48, maxWidth: 520, margin: "48px auto 0", position: "relative" }}>
-            <div style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "4px 6px 4px 18px", transition: "border-color 0.3s" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-              <input type="text" placeholder={`Search ${allSkills.length}+ skills...`} value={query} onChange={e => setQuery(e.target.value)} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 14, padding: "12px 12px", fontFamily: "inherit" }} />
-              <button className="btn-primary" style={{ padding: "9px 18px", borderRadius: 7, fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase" }}>Search</button>
-            </div>
-          </div>
-          <div className="e5" style={{ marginTop: 28, maxWidth: 440, margin: "28px auto 0", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "14px 18px", textAlign: "left", fontFamily: "'Fragment Mono', monospace", fontSize: 12.5, background: "rgba(255,255,255,0.02)" }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {[0.15, 0.1, 0.1].map((o, i) => <div key={i} style={{ width: 8, height: 8, borderRadius: 4, background: `rgba(255,255,255,${o})` }} />)}
-            </div>
-            <div><span style={{ color: "rgba(255,255,255,0.3)" }}>$</span> <span style={{ color: "rgba(255,255,255,0.6)" }}>/ skiyu install</span> <span style={{ color: "rgba(255,255,255,0.9)" }}>@synthwave/pdf-architect</span></div>
-            <div style={{ marginTop: 6, color: "rgba(255,255,255,0.4)" }}><span style={{ color: "rgba(255,255,255,0.6)" }}>✓</span> Installed v2.4.1 — skill active in Claude</div>
-          </div>
-        </div>
-        <div style={{ position: "absolute", bottom: 32, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, animation: "floatSlow 3s ease-in-out infinite" }}>
-          <span style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.15)", fontFamily: "'Fragment Mono', monospace" }}>Scroll</span>
-          <div style={{ width: 1, height: 24, background: "linear-gradient(to bottom, rgba(255,255,255,0.2), transparent)" }} />
         </div>
       </section>
 
@@ -293,144 +406,18 @@ export default function Home() {
           </div>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gap: 16,
           }}>
-            {filtered.map((sk: SkillCatalogItem) => {
-              const color = "#22d3ee";
-              const needsAudit = sk.quality_tier === "needs_audit";
-              return (
-                <div key={sk.id} className="skill-card-grid"
-                role="button"
-                tabIndex={0}
-                onClick={() => setActiveSkill(sk)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setActiveSkill(sk);
-                  }
-                }}
-                style={{
-                  background: needsAudit ? "rgba(245,158,11,0.04)" : "rgba(255,255,255,0.02)",
-                  border: needsAudit
-                    ? "1px solid rgba(245,158,11,0.2)"
-                    : "1px solid rgba(255,255,255,0.06)",
-                  borderTop: needsAudit
-                    ? "2px solid rgba(245,158,11,0.5)"
-                    : `2px solid ${color}`,
-                  borderRadius: 10,
-                  padding: 20,
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 160,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  opacity: needsAudit ? 0.7 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (needsAudit) return;
-                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.12)";
-                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
-                }}
-                onMouseLeave={(e) => {
-                  if (needsAudit) return;
-                  (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.06)";
-                  (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)";
-                }}>
-                  {/* top: name + license */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Erode', serif", letterSpacing: "-0.01em" }}>{sk.name}</span>
-                      {needsAudit && (
-                        <span style={{
-                          fontSize: 9, fontFamily: "'Fragment Mono', monospace", letterSpacing: "0.08em", textTransform: "uppercase" as const,
-                          padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(245,158,11,0.15)",
-                          color: "#fcd34d",
-                          whiteSpace: "nowrap",
-                        }}>⚠ audit</span>
-                      )}
-                    </div>
-                    <span style={{
-                      fontSize: 11, fontFamily: "'Fragment Mono', monospace", fontWeight: 600,
-                      padding: "3px 10px", borderRadius: 100,
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      color: "rgba(255,255,255,0.3)",
-                      flexShrink: 0, marginLeft: 8,
-                    }}>{sk.github_license || "N/A"}</span>
-                  </div>
-
-                  {/* author */}
-                  <div style={{ fontSize: 11, fontFamily: "'Fragment Mono', monospace", color: "rgba(255,255,255,0.2)", marginTop: 4 }}>
-                    @{sk.author_username} · ★ {sk.github_stars || 0}
-                  </div>
-
-                  {/* description */}
-                  <div style={{
-                    fontSize: 13, fontFamily: "'Erode', serif", color: "rgba(255,255,255,0.35)", lineHeight: 1.5,
-                    marginTop: 12, overflow: "hidden",
-                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
-                  }}>{sk.description}</div>
-
-                  <div style={{ flex: 1 }} />
-
-                  {/* footer: stats + category + download */}
-                  <div style={{
-                    borderTop: "1px solid rgba(255,255,255,0.04)",
-                    paddingTop: 12, marginTop: 16,
-                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-                  }}>
-                    <span style={{ fontSize: 11, fontFamily: "'Fragment Mono', monospace", color: "rgba(255,255,255,0.25)" }}>
-                      ★ {sk.avg_rating || "—"} · ↓ {fmt(sk.download_count || 0)}
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{
-                        fontSize: 10, fontFamily: "'Fragment Mono', monospace", letterSpacing: "0.04em", textTransform: "uppercase" as const,
-                        padding: "2px 8px", borderRadius: 4,
-                        background: `${color}1F`,
-                        color: color,
-                      }}>{sk.category_name}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (needsAudit) return;
-                          handleDownload(e, sk.id, sk.name);
-                        }}
-                        disabled={downloadingId === sk.id || needsAudit}
-                        style={{
-                          background: needsAudit
-                            ? "rgba(255,255,255,0.02)"
-                            : downloadingId === sk.id ? "#fff" : "rgba(255,255,255,0.06)",
-                          color: needsAudit
-                            ? "rgba(255,255,255,0.25)"
-                            : downloadingId === sk.id ? "#000" : "#fff",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          fontSize: 11,
-                          fontFamily: "'Fragment Mono', monospace",
-                          fontWeight: 600,
-                          cursor: needsAudit || downloadingId === sk.id ? "not-allowed" : "pointer",
-                          transition: "all 0.2s",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!needsAudit && downloadingId !== sk.id) {
-                            (e.currentTarget as HTMLButtonElement).style.background = "#fff";
-                            (e.currentTarget as HTMLButtonElement).style.color = "#000";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!needsAudit && downloadingId !== sk.id) {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
-                            (e.currentTarget as HTMLButtonElement).style.color = "#fff";
-                          }
-                        }}
-                      >{needsAudit ? "audit" : downloadingId === sk.id ? "↓ Preparing…" : "↓ Get"}</button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filtered.map((sk: SkillCatalogItem) => (
+              <SkillCard
+                key={sk.id}
+                skill={sk}
+                onOpen={setActiveSkill}
+                preferModal
+                userId={user?.id}
+              />
+            ))}
           </div>
           <div style={{ textAlign: "center", marginTop: 48 }}>
             <button className="btn-ghost" onClick={() => navigate("/explore")} onMouseEnter={() => preloadRoute["/explore"]()} onFocus={() => preloadRoute["/explore"]()} style={{ padding: "12px 36px", borderRadius: 8, fontSize: 13, letterSpacing: "0.04em" }}>Browse All Skills →</button>

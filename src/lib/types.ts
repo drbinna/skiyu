@@ -78,6 +78,12 @@ export interface SkillCatalogItem {
   created_at: string;
   last_synced_at: string | null;
   updated_at: string;
+  /** One sentence: who the skill is for. Shown on the card under the
+   *  `// FOR` kicker. Null collapses the section. */
+  audience: string | null;
+  /** Paragraph: explicit scope limits. Shown on the detail page under
+   *  `// what it doesn't do`. Null collapses the section. */
+  does_not_do: string | null;
 }
 
 /** Extra fields fetched on-demand when opening the skill modal. */

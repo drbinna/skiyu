@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { useSkills, useCategories, useCategoryCounts, downloadSkill, formatFileSize } from "@/lib/hooks";
+import { useSkills, useCategories, useCategoryCounts } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
+import SkillCard from "./skill-card";
 import type { SkillCatalogItem } from "@/lib/types";
 import { preloadRoute } from "../routes";
 
+// Sort options for the explore catalog. The directory framing means
+// freshness wins by default; the rest are honest secondary axes that
+// derive from real data we have today (no runtime evidence required).
 const SORT_OPTIONS = [
-  { id: "relevance", label: "Relevance" },
-  { id: "installs", label: "Most installed" },
-  { id: "rating", label: "Highest rated" },
   { id: "updated", label: "Recently updated" },
+  { id: "newest", label: "Newest published" },
+  { id: "name", label: "Name (A→Z)" },
   { id: "stars", label: "Most starred" },
-  { id: "name", label: "Name A-Z" },
 ];
 
 const LICENSE_FILTERS = ["Any", "MIT", "Apache-2.0", "Proprietary"];
@@ -30,7 +32,7 @@ export default function Explore() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [cat, setCat] = useState("all");
-  const [sort, setSort] = useState("relevance");
+  const [sort, setSort] = useState("updated");
   const [licenseFilter, setLicenseFilter] = useState("Any");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -303,152 +305,23 @@ export default function Explore() {
           {/* card grid */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gap: 16,
             padding: "16px 24px",
           }}>
             {loading ? (
               <div style={{ padding: "80px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 13, color: "rgba(255,255,255,0.2)", fontFamily: M }}>Loading skills...</div>
               </div>
-            ) : filtered.map(s => {
-              const color = "#22d3ee";
-              const catLabel = s.category_name || "Uncategorized";
-              const needsAudit = s.quality_tier === "needs_audit";
-              return (
-                <div
-                  key={s.id}
-                  className="skill-card-grid"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setActiveSkill(s)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setActiveSkill(s);
-                    }
-                  }}
-                  style={{
-                    background: needsAudit ? "rgba(245,158,11,0.04)" : "rgba(255,255,255,0.02)",
-                    border: needsAudit
-                      ? "1px solid rgba(245,158,11,0.2)"
-                      : "1px solid rgba(255,255,255,0.06)",
-                    borderTop: needsAudit
-                      ? "2px solid rgba(245,158,11,0.5)"
-                      : `2px solid ${color}`,
-                    borderRadius: 10,
-                    padding: 20,
-                    display: "flex",
-                    flexDirection: "column",
-                    minHeight: 160,
-                    opacity: needsAudit ? 0.7 : 1,
-                  }}
-                >
-                  {/* top */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: F, letterSpacing: "-0.01em" }}>{s.name}</span>
-                      {needsAudit && (
-                        <span style={{
-                          fontSize: 9, fontFamily: M, letterSpacing: "0.08em", textTransform: "uppercase" as const,
-                          padding: "2px 6px", borderRadius: 4,
-                          background: "rgba(245,158,11,0.15)",
-                          color: "#fcd34d",
-                          whiteSpace: "nowrap",
-                        }}>⚠ audit</span>
-                      )}
-                    </div>
-                    <span style={{
-                      fontSize: 11, fontFamily: M, fontWeight: 600,
-                      padding: "3px 10px", borderRadius: 100,
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      color: "rgba(255,255,255,0.3)",
-                      flexShrink: 0, marginLeft: 8,
-                    }}>{s.github_license || "N/A"}</span>
-                  </div>
-
-                  {/* author */}
-                  <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.2)", marginTop: 4 }}>
-                    @{s.author_username} · ★ {s.github_stars}
-                  </div>
-
-                  {/* description */}
-                  <div style={{
-                    fontSize: 13, fontFamily: F, color: "rgba(255,255,255,0.35)", lineHeight: 1.5,
-                    marginTop: 12, overflow: "hidden",
-                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
-                  }}>{s.description}</div>
-
-                  {/* spacer */}
-                  <div style={{ flex: 1 }} />
-
-                  {/* footer */}
-                  <div style={{
-                    borderTop: "1px solid rgba(255,255,255,0.04)",
-                    paddingTop: 12, marginTop: 16,
-                    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-                  }}>
-                    <span style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)" }}>
-                      ★ {s.avg_rating || "—"} · ↓ {fmt(s.download_count || 0)}
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{
-                        fontSize: 10, fontFamily: M, letterSpacing: "0.04em", textTransform: "uppercase" as const,
-                        padding: "2px 8px", borderRadius: 4,
-                        background: `${color}1F`,
-                        color: color,
-                      }}>{catLabel}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (needsAudit) return;
-                          handleDownload(e, s.id, s.name);
-                        }}
-                        disabled={downloadingId === s.id || needsAudit}
-                        title={needsAudit
-                          ? "Audit in progress"
-                          : `Download zip${s.package_size_bytes ? ` (${formatFileSize(s.package_size_bytes)})` : ""}`}
-                        style={{
-                          background: needsAudit
-                            ? "rgba(255,255,255,0.02)"
-                            : downloadingId === s.id ? "#fff" : "rgba(255,255,255,0.06)",
-                          color: needsAudit
-                            ? "rgba(255,255,255,0.25)"
-                            : downloadingId === s.id ? "#000" : "#fff",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          fontSize: 11,
-                          fontFamily: M,
-                          fontWeight: 600,
-                          cursor: needsAudit || downloadingId === s.id ? "not-allowed" : "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                          transition: "all 0.2s",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!needsAudit && downloadingId !== s.id) {
-                            (e.currentTarget as HTMLButtonElement).style.background = "#fff";
-                            (e.currentTarget as HTMLButtonElement).style.color = "#000";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!needsAudit && downloadingId !== s.id) {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)";
-                            (e.currentTarget as HTMLButtonElement).style.color = "#fff";
-                          }
-                        }}
-                      >
-                        {needsAudit
-                          ? "audit"
-                          : downloadingId === s.id ? "↓ Preparing…" : "↓ Download"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            ) : filtered.map(s => (
+              <SkillCard
+                key={s.id}
+                skill={s}
+                onOpen={setActiveSkill}
+                preferModal
+                userId={user?.id}
+              />
+            ))}
           </div>
 
           {/* Load more */}

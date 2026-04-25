@@ -15,6 +15,7 @@ const importExplore = () => import("./components/explore");
 const importPublish = () => import("./components/publish");
 const importDocs = () => import("./components/docs");
 const importAdminStaged = () => import("./components/admin-staged");
+const importSkillDetail = () => import("./components/skill-detail");
 
 export const preloadRoute = {
   "/explore": importExplore,
@@ -51,6 +52,13 @@ export const router = createBrowserRouter([
     lazy: async () => {
       const { default: AdminStaged } = await importAdminStaged();
       return { Component: AdminStaged };
+    },
+  },
+  {
+    path: "/skills/:slug",
+    lazy: async () => {
+      const { default: SkillDetail } = await importSkillDetail();
+      return { Component: SkillDetail };
     },
   },
 ]);

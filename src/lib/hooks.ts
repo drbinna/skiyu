@@ -92,6 +92,10 @@ export function useSkills(opts?: {
         case "updated":
           query = query.order("updated_at", { ascending: false });
           break;
+        case "newest":
+          // First-time publishing surface: rewards the long tail.
+          query = query.order("created_at", { ascending: false });
+          break;
         default:
           query = query.order("quality_score", { ascending: false, nullsFirst: false });
           break;
@@ -359,7 +363,50 @@ export function useSkillDetail(skillId: string | null) {
   return { detail: data ?? null, loading: isLoading };
 }
 
-// ── Upload a zip package (for publishers) ───────────────────
+// ── Fetch skill by slug for the detail page ─────────────────
+// Returns the full catalog row PLUS the per-skill detail fields the
+// modal-only hook would otherwise need a second query for. Used by the
+// /skills/:slug route. Cached per slug.
+export function useSkillBySlug(slug: string | null | undefined) {
+  const { data, isLoading, isError } = useQuery({
+    enabled: !!slug,
+    queryKey: ["skill-by-slug", slug],
+    queryFn: async () => {
+      // The catalog view exposes audience and does_not_do, plus all the
+      // standard listing fields the page header needs.
+      const { data: catalog, error: catalogErr } = await supabase
+        .from("v_skill_catalog")
+        .select("*")
+        .eq("slug", slug as string)
+        .maybeSingle();
+      if (catalogErr) throw catalogErr;
+      if (!catalog) return null;
+
+      // A second query for the prose-heavy fields stored only on `skills`.
+      // Cheap (one row by id) and only fires when the slug resolves.
+      const { data: extra } = await supabase
+        .from("skills")
+        .select(
+          "frontmatter, readme_content, skill_md_content, skill_folder_path, github_url",
+        )
+        .eq("id", catalog.id)
+        .maybeSingle();
+
+      return {
+        skill: catalog as SkillCatalogItem,
+        frontmatter: (extra?.frontmatter as Record<string, unknown> | null) ?? null,
+        readme_content: extra?.readme_content ?? null,
+        skill_md_content: extra?.skill_md_content ?? null,
+        skill_folder_path: extra?.skill_folder_path ?? null,
+        github_url: extra?.github_url ?? null,
+      };
+    },
+    staleTime: 5 * 60_000,
+  });
+  return { data: data ?? null, loading: isLoading, error: isError };
+}
+
+
 export async function uploadSkillPackage(
   skillId: string,
   userId: string,
