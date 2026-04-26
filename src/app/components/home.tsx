@@ -95,7 +95,10 @@ function MorphBlob({ size = 400, top, left, opacity = 0.04 }: { size?: number; t
 }
 
 export default function Home() {
-  const [activeCat, setActiveCat] = useState("All");
+  // Category filter on home was removed with the // FEATURED treatment;
+  // categorical browsing belongs in /explore. Const'd to keep the filter
+  // expression below type-clean without dragging in dead state.
+  const activeCat = "All";
   const [query, setQuery] = useState("");
   const [scrollY, setScrollY] = useState(0);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -295,9 +298,9 @@ export default function Home() {
               maxWidth: 1100,
             }}
           >
-            <span style={{ color: "#fff" }}>Skills, written well.</span>{" "}
+            <span style={{ color: "#fff" }}>Engineer skills.</span>{" "}
             <span style={{ color: "rgba(255,255,255,0.40)" }}>
-              Found, forked, or shipped from scratch.
+              Find them, write them, ship them.
             </span>
           </h1>
           <p
@@ -308,13 +311,13 @@ export default function Home() {
               fontSize: 17,
               lineHeight: 1.55,
               color: "rgba(255,255,255,0.60)",
-              maxWidth: 560,
+              maxWidth: 580,
               margin: "28px 0 0",
             }}
           >
-            Skiyu is where people who care about their craft publish skills
-            others can use. Every skill comes with an author, a license, and
-            a one-line install. Browse what's there, or write your own.
+            Better agents need better instructions. Skiyu is where engineers
+            write the skills agents will follow tomorrow, and where you'll find
+            the ones that hold up today.
           </p>
           <div
             className="e4"
@@ -342,9 +345,9 @@ export default function Home() {
             </button>
             <button
               type="button"
-              onClick={() => navigate("/publish")}
-              onMouseEnter={() => preloadRoute["/publish"]()}
-              onFocus={() => preloadRoute["/publish"]()}
+              onClick={() => navigate("/author")}
+              onMouseEnter={() => preloadRoute["/author"]()}
+              onFocus={() => preloadRoute["/author"]()}
               style={{
                 padding: "14px 28px",
                 background: "rgba(255,255,255,0.04)",
@@ -358,7 +361,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Start writing
+              Open the workbench →
             </button>
           </div>
           <div
@@ -377,32 +380,35 @@ export default function Home() {
         </div>
       </section>
 
-      {/* MARQUEE */}
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", padding: "16px 0", overflow: "hidden", whiteSpace: "nowrap" }}>
-        <div className="marquee-track" style={{ fontSize: 12, fontFamily: "'Fragment Mono', monospace", color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          {Array(2).fill(null).map((_, k) => (
-            <div key={k} style={{ display: "flex", gap: 64, flexShrink: 0 }}>
-              {["Document Generation", "Code Analysis", "Data Transform", "DevOps", "Research", "Creative", "Legal", "Medical", "Finance", "Security", "Testing", "API Design"].map(t => <span key={t+k}>{t}</span>)}
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* SKILLS */}
-      <section style={{ padding: "80px 48px 120px", position: "relative" }}>
+      <section style={{ padding: "100px 48px 120px", position: "relative" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 48 }}>
-            <h2 style={{ fontSize: 36, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 20 }}>Trending This Week</h2>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
-              {["All", ...Array.from(new Set(allSkills.map(s => s.category_name).filter(Boolean)))].map(c => (
-                <button key={c} className="cat-pill" onClick={() => setActiveCat(c)} style={{
-                  padding: "6px 16px", borderRadius: 100, fontSize: 12, fontWeight: 500,
-                  border: activeCat === c ? "1px solid rgba(255,255,255,0.3)" : "1px solid rgba(255,255,255,0.06)",
-                  background: activeCat === c ? "rgba(255,255,255,0.06)" : "transparent",
-                  color: activeCat === c ? "#fff" : "rgba(255,255,255,0.35)",
-                }}>{c}</button>
-              ))}
+          <div style={{ marginBottom: 48 }}>
+            <div
+              style={{
+                fontFamily: "'Fragment Mono', monospace",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.25)",
+              }}
+            >
+              // featured
             </div>
+            <h2
+              style={{
+                fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+                fontStyle: "italic",
+                fontWeight: 700,
+                fontSize: "clamp(36px, 5vw, 56px)",
+                letterSpacing: "-0.03em",
+                lineHeight: 1.05,
+                margin: "16px 0 0",
+              }}
+            >
+              Skills, today.
+            </h2>
           </div>
           <div style={{
             display: "grid",
@@ -425,6 +431,329 @@ export default function Home() {
         </div>
       </section>
 
+      {/* WORKBENCH — second core surface, alongside the marketplace.
+        * This section introduces the authoring half of the product.
+        * The animation is a 12-second loop that demonstrates the value
+        * prop concretely: skiyu catches publishing problems before the
+        * lint does. Static fallback for prefers-reduced-motion. */}
+      <section
+        style={{
+          padding: "120px 48px",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+          position: "relative",
+        }}
+      >
+        <style>{`
+          /* Workbench animation timeline (12s loop):
+           *   0s   editor empty, chat empty
+           *   1s   line 1 appears (---)
+           *   1.5s line 2 appears (name: pdf-extract)
+           *   2s   line 3 appears (description: A revolutionary PDF tool)
+           *   2.5s line 4 appears (---)
+           *   4s   chat bubble 1 appears (catches "revolutionary")
+           *   6s   line 3 swaps to fixed description
+           *   8s   chat bubble 2 appears (✓ ready to publish)
+           *   10s  hold
+           *   11s  everything fades
+           *   12s  loop restarts
+           */
+          @keyframes wbLine {
+            0%, 100% { opacity: 0; transform: translateY(4px); }
+            8%, 91% { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes wbLineSwap {
+            0%, 49% { opacity: 0; }
+            54%, 91% { opacity: 1; }
+            100% { opacity: 0; }
+          }
+          @keyframes wbLineFlagged {
+            0%, 32% { opacity: 0; transform: translateY(4px); }
+            17%, 49% { opacity: 1; transform: translateY(0); }
+            54%, 100% { opacity: 0; }
+          }
+          @keyframes wbBubble1 {
+            0%, 32% { opacity: 0; transform: translateY(8px); }
+            41%, 54% { opacity: 1; transform: translateY(0); }
+            58%, 100% { opacity: 0; transform: translateY(-4px); }
+          }
+          @keyframes wbBubble2 {
+            0%, 65% { opacity: 0; transform: translateY(8px); }
+            74%, 91% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; }
+          }
+          @keyframes wbCaretBlink {
+            0%, 50% { opacity: 1; }
+            50.01%, 100% { opacity: 0; }
+          }
+
+          .wb-line, .wb-line-flagged, .wb-line-fixed,
+          .wb-bubble-1, .wb-bubble-2 {
+            animation-duration: 12s;
+            animation-iteration-count: infinite;
+            animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1);
+          }
+          .wb-line   { animation-name: wbLine; }
+          .wb-line-flagged { animation-name: wbLineFlagged; }
+          .wb-line-fixed   { animation-name: wbLineSwap; }
+          .wb-bubble-1     { animation-name: wbBubble1; }
+          .wb-bubble-2     { animation-name: wbBubble2; }
+          .wb-line-1 { animation-delay: 0.0s; }
+          .wb-line-2 { animation-delay: 0.5s; }
+          .wb-line-3 { animation-delay: 1.0s; }
+          .wb-line-4 { animation-delay: 1.5s; }
+          .wb-flag   { background: rgba(252, 211, 77, 0.18); border-radius: 2px; padding: 0 3px; }
+
+          @media (prefers-reduced-motion: reduce) {
+            /* Collapse to end-state: fixed description visible, both
+             * bubbles visible, no animation. The reader sees the punchline
+             * without any motion. */
+            .wb-line, .wb-line-fixed, .wb-bubble-1, .wb-bubble-2 {
+              animation: none !important;
+              opacity: 1 !important;
+              transform: none !important;
+            }
+            .wb-line-flagged {
+              animation: none !important;
+              opacity: 0 !important;
+            }
+          }
+        `}</style>
+
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr)",
+            gap: 64,
+            alignItems: "center",
+          }}
+        >
+          {/* Left: copy */}
+          <div>
+            <div
+              style={{
+                fontFamily: "'Fragment Mono', monospace",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.25)",
+              }}
+            >
+              // the workbench
+            </div>
+            <h2
+              style={{
+                fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+                fontStyle: "italic",
+                fontWeight: 700,
+                fontSize: "clamp(36px, 5vw, 56px)",
+                letterSpacing: "-0.03em",
+                lineHeight: 1.05,
+                margin: "16px 0 0",
+              }}
+            >
+              <span style={{ color: "rgba(255,255,255,0.40)" }}>
+                Don't just install skills.
+              </span>{" "}
+              <span style={{ color: "#fff" }}>Engineer them.</span>
+            </h2>
+            <p
+              style={{
+                marginTop: 24,
+                fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+                fontStyle: "italic",
+                fontSize: 16,
+                lineHeight: 1.6,
+                color: "rgba(255,255,255,0.60)",
+                maxWidth: 480,
+              }}
+            >
+              Skiyu's workbench is where engineers draft, refine, and publish
+              skills with a working assistant in the next pane. Catch
+              marketing language before the lint does. Test against real
+              prompts. Ship to the catalog when the work is ready.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/author")}
+              onMouseEnter={() => preloadRoute["/author"]()}
+              onFocus={() => preloadRoute["/author"]()}
+              style={{
+                marginTop: 32,
+                padding: "14px 28px",
+                background: "#fff",
+                color: "#000",
+                border: "1px solid rgba(255,255,255,0.10)",
+                borderRadius: 6,
+                fontFamily: "'Fragment Mono', monospace",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                cursor: "pointer",
+              }}
+            >
+              Open the workbench →
+            </button>
+          </div>
+
+          {/* Right: live-loop demo (editor + chat) */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.02)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: 12,
+              padding: 6,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 6,
+              minHeight: 320,
+            }}
+          >
+            {/* Editor pane */}
+            <div
+              style={{
+                background: "#000",
+                border: "1px solid rgba(255,255,255,0.04)",
+                borderRadius: 8,
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Fragment Mono', monospace",
+                  fontSize: 10,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.20)",
+                  marginBottom: 12,
+                }}
+              >
+                SKILL.md
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Fragment Mono', monospace",
+                  fontSize: 12.5,
+                  lineHeight: 1.85,
+                  color: "rgba(255,255,255,0.85)",
+                }}
+              >
+                <div className="wb-line wb-line-1">---</div>
+                <div className="wb-line wb-line-2">
+                  <span style={{ color: "rgba(255,255,255,0.40)" }}>name:</span>{" "}
+                  pdf-extract
+                </div>
+                {/* Two stacked descriptions: the flagged version shows first, then the fixed version replaces it. */}
+                <div style={{ position: "relative", minHeight: "1.85em" }}>
+                  <div
+                    className="wb-line-flagged wb-line-3"
+                    style={{ position: "absolute", inset: 0 }}
+                  >
+                    <span style={{ color: "rgba(255,255,255,0.40)" }}>
+                      description:
+                    </span>{" "}
+                    A <span className="wb-flag">revolutionary</span> PDF tool
+                  </div>
+                  <div
+                    className="wb-line-fixed"
+                    style={{ position: "absolute", inset: 0 }}
+                  >
+                    <span style={{ color: "rgba(255,255,255,0.40)" }}>
+                      description:
+                    </span>{" "}
+                    Extracts text and tables from PDFs.
+                  </div>
+                </div>
+                <div className="wb-line wb-line-4">---</div>
+              </div>
+
+              {/* Cursor block */}
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  left: 16,
+                  width: 7,
+                  height: 14,
+                  background: "rgba(255,255,255,0.65)",
+                  animation: "wbCaretBlink 1.1s linear infinite",
+                }}
+              />
+            </div>
+
+            {/* Chat pane */}
+            <div
+              style={{
+                background: "#000",
+                border: "1px solid rgba(255,255,255,0.04)",
+                borderRadius: 8,
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Fragment Mono', monospace",
+                  fontSize: 10,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.20)",
+                  marginBottom: 8,
+                }}
+              >
+                skiyu
+              </div>
+
+              <div
+                className="wb-bubble-1"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+                  fontStyle: "italic",
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                  color: "rgba(255,255,255,0.80)",
+                }}
+              >
+                "Revolutionary" will trip the lint. Want me to rewrite the
+                description based on what your script does?
+              </div>
+
+              <div
+                className="wb-bubble-2"
+                style={{
+                  background: "rgba(74, 222, 128, 0.06)",
+                  border: "1px solid rgba(74, 222, 128, 0.14)",
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+                  fontStyle: "italic",
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                  color: "rgba(255,255,255,0.80)",
+                }}
+              >
+                Looks good — 41 chars, no marketing words.{" "}
+                <span style={{ color: "#4ade80" }}>✓ Ready to publish.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* HOW IT WORKS */}
       <section style={{ padding: "100px 48px", borderTop: "1px solid rgba(255,255,255,0.05)", position: "relative", zIndex: 1 }} className="grid-bg">
         <div style={{ maxWidth: 1000, margin: "0 auto", position: "relative", zIndex: 2 }}>
@@ -436,23 +765,25 @@ export default function Home() {
               {
                 num: "01",
                 title: "Install",
-                // Honest version: there's a paste step. We don't pretend it's instant.
+                // Honest: paste step exists, no claims of instant.
                 desc: "Copy the install command from any skill. Paste it into your Claude Code terminal. The skill is available on the next prompt.",
               },
               {
                 num: "02",
-                title: "Inspect",
-                // Replaces the fictional "Collaborate" panel. Forking, version control,
-                // and PRs aren't built. Reading the source is — every skill links to its
-                // GitHub repo, and the source is the documentation.
-                desc: "Every skill is open source. The card links straight to the repo. Read what the skill does before you install it — the source is the documentation.",
+                title: "Engineer",
+                // The new platform pitch in two lines. Names skiyu's authoring
+                // assistant once, frames it as a working partner that catches
+                // what the lint will reject before publish-time. This is the
+                // page's only naming of the assistant — it's a tool-of-the-
+                // platform, not a separately-marketed AI feature.
+                desc: "Open the workbench. Skiyu's authoring assistant catches what the lint will reject — vague descriptions, marketing language, missing context — before you publish.",
               },
               {
                 num: "03",
-                title: "Publish",
-                // Describes the real review pipeline (skills_staged + admin Review Queue).
-                // Drops the "12K+ engineers" claim — actual count is 24 attributed authors,
-                // mostly from scrapes, not signups.
+                title: "Ship",
+                // Frames publishing as a quality-gated verb, not a button. The
+                // lint as gate IS the differentiator vs. just dropping skills
+                // in a github repo.
                 desc: "Submit your skill from a GitHub repo. Skiyu lints it against a public quality bar — frontmatter, license, description rigor — and reviews before it lands in the catalog.",
               },
             ].map(s => (
@@ -470,25 +801,38 @@ export default function Home() {
       <section style={{ padding: "140px 48px", textAlign: "center", position: "relative" }}>
         <MorphBlob size={500} top="-20%" left="35%" opacity={0.04} />
         <div style={{ position: "relative", zIndex: 2 }}>
-          <h2 style={{ fontSize: "clamp(36px, 6vw, 60px)", fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1.05 }}>
-            Ship your first skill<br /><span style={{ fontStyle: "italic", fontWeight: 400, color: "rgba(255,255,255,0.4)" }}>with / skiyu</span>
+          <h2
+            style={{
+              fontFamily: "'Erode', 'Cormorant Garamond', Georgia, serif",
+              fontStyle: "italic",
+              fontWeight: 700,
+              fontSize: "clamp(36px, 6vw, 60px)",
+              letterSpacing: "-0.04em",
+              lineHeight: 1.05,
+            }}
+          >
+            <span style={{ color: "#fff" }}>Ship your first skill.</span>
+            <br />
+            <span style={{ color: "rgba(255,255,255,0.40)" }}>
+              Or your hundredth.
+            </span>
           </h2>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 44 }}>
             <button
               className="btn-primary"
-              onClick={() => navigate("/publish")}
-              onMouseEnter={() => preloadRoute["/publish"]()}
+              onClick={() => navigate("/author")}
+              onMouseEnter={() => preloadRoute["/author"]()}
               style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}
             >
-              Publish a skill
+              Open the workbench →
             </button>
             <button
               className="btn-ghost"
-              onClick={() => navigate("/docs")}
-              onMouseEnter={() => preloadRoute["/docs"]()}
+              onClick={() => navigate("/explore")}
+              onMouseEnter={() => preloadRoute["/explore"]()}
               style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}
             >
-              Read the docs
+              Browse the catalog
             </button>
           </div>
         </div>

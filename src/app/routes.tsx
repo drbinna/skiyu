@@ -16,12 +16,14 @@ const importPublish = () => import("./components/publish");
 const importDocs = () => import("./components/docs");
 const importAdminStaged = () => import("./components/admin-staged");
 const importSkillDetail = () => import("./components/skill-detail");
+const importAuthor = () => import("./components/author");
 
 export const preloadRoute = {
   "/explore": importExplore,
   "/publish": importPublish,
   "/docs": importDocs,
   "/admin/staged": importAdminStaged,
+  "/author": importAuthor,
 } as const;
 
 export const router = createBrowserRouter([
@@ -59,6 +61,13 @@ export const router = createBrowserRouter([
     lazy: async () => {
       const { default: SkillDetail } = await importSkillDetail();
       return { Component: SkillDetail };
+    },
+  },
+  {
+    path: "/author",
+    lazy: async () => {
+      const { default: Author } = await importAuthor();
+      return { Component: Author };
     },
   },
 ]);
