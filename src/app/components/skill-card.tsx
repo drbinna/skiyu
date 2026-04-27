@@ -24,12 +24,16 @@ interface SkillCardProps {
  *
  * Layout: name → meta row (@author · category · license) → "what it does"
  * sentence → optional `// FOR` audience block (collapses when null) →
- * preview/updated line → primary "Run skill" + secondary ".zip" buttons.
+ * preview/updated line → primary "Run skill" + secondary "Download skill".
  *
- * Hovering either button swaps the updated line for a preview of what the
- * action does. Clicking "Run skill" opens the detail page action launcher.
+ * "Run skill" navigates to the workbench at /author?skill=<slug> where the
+ * skill loads and the user provides input. "Download skill" triggers a
+ * server-side zip of the skill folder. Hovering either button swaps the
+ * updated line for a one-line preview of what the action does.
  *
- * Source of truth: design-system handoff `skiyu-discovery-install.html`.
+ * Source of truth: design-system handoff `skiyu-discovery-install.html`,
+ * with the action surface updated post-screenshot to point Run at the
+ * workbench rather than the detail page's run-launcher fiction.
  */
 export default function SkillCard({
   skill,
@@ -55,7 +59,7 @@ export default function SkillCard({
   // so the layout never shifts.
   const previewLine =
     hover === "run"
-      ? `→ open run setup for ${primaryActionLabel(skill)}`
+      ? `→ open ${skill.name} in the workbench`
       : hover === "zip"
         ? `→ ${zipPreview}`
         : `updated ${formatRelative(skill.updated_at)}`;
@@ -63,7 +67,11 @@ export default function SkillCard({
   const handleRun = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      navigate(`/skills/${skill.slug}`);
+      // The workbench preloads the skill via the ?skill query param so
+      // the user lands directly in a session for this skill. Today /author
+      // is a placeholder that reads the param and shows a "loading <name>"
+      // state; once the workbench ships, it becomes the actual run surface.
+      navigate(`/author?skill=${encodeURIComponent(skill.slug)}`);
     },
     [navigate, skill.slug],
   );
@@ -296,7 +304,7 @@ export default function SkillCard({
             transition: "background 150ms cubic-bezier(0.2, 0.8, 0.3, 1)",
           }}
         >
-          {downloading ? "↓ …" : "↓ .zip"}
+          {downloading ? "↓ Preparing…" : "↓ Download skill"}
         </button>
       </div>
     </div>
@@ -313,18 +321,6 @@ function firstSentence(s: string): string {
   if (!s) return "";
   const m = s.match(/^[^.!?]*[.!?]/);
   return (m ? m[0] : s).trim();
-}
-
-function primaryActionLabel(skill: SkillCatalogItem): string {
-  const text = `${skill.name} ${skill.description} ${skill.category_slug ?? ""}`.toLowerCase();
-  if (text.includes("review") || text.includes("audit") || text.includes("analy"))
-    return "Run analysis";
-  if (text.includes("doc") || text.includes("write") || text.includes("generate"))
-    return "Generate output";
-  if (text.includes("deploy") || text.includes("infra") || text.includes("k8s"))
-    return "Prepare deployment";
-  if (text.includes("test") || text.includes("qa")) return "Build test plan";
-  return "Run action";
 }
 
 /** ISO timestamp → "3d ago" / "2w ago" / "5mo ago" / "2024".

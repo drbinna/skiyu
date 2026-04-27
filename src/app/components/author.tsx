@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import NavAuth from "./nav-auth";
 import { preloadRoute } from "../routes";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +15,13 @@ const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
  */
 export default function Author() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // ?skill=<slug> — populated when the user clicked "Run skill" on a card.
+  // Today the page is a placeholder, so we don't actually load the skill;
+  // we just acknowledge it in the banner so the click feels intentional,
+  // and we tag the email signup with the slug so we know which skills
+  // people are most asking to run.
+  const skillSlug = (searchParams.get("skill") ?? "").trim() || null;
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -32,7 +39,12 @@ export default function Author() {
 
     const { error: insertError } = await supabase
       .from("workbench_signups")
-      .insert({ email: email.trim().toLowerCase(), source: "author_page" });
+      .insert({
+        email: email.trim().toLowerCase(),
+        // Tag the source with the requested slug when present so we can
+        // sort the notify-me list by which skills were clicked from.
+        source: skillSlug ? `run:${skillSlug}` : "author_page",
+      });
 
     if (insertError) {
       // Duplicate email is fine — silently treat as success.
@@ -138,6 +150,68 @@ export default function Author() {
           padding: "120px 32px 80px",
         }}
       >
+        {skillSlug ? (
+          <div
+            style={{
+              padding: "14px 18px",
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: 8,
+              marginBottom: 32,
+              display: "flex",
+              alignItems: "baseline",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: M,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "rgba(255, 255, 255, 0.40)",
+              }}
+            >
+              run requested
+            </span>
+            <span
+              style={{
+                fontFamily: F,
+                fontStyle: "italic",
+                fontSize: 14,
+                color: "rgba(255, 255, 255, 0.80)",
+              }}
+            >
+              {skillSlug}
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontFamily: M,
+                fontSize: 11,
+                color: "rgba(255, 255, 255, 0.40)",
+              }}
+            >
+              <a
+                href={`/skills/${skillSlug}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate(`/skills/${skillSlug}`);
+                }}
+                style={{
+                  color: "#fff",
+                  textDecoration: "none",
+                  borderBottom: "1px solid rgba(255, 255, 255, 0.10)",
+                }}
+              >
+                view skill →
+              </a>
+            </span>
+          </div>
+        ) : null}
+
         <div
           style={{
             fontFamily: M,
@@ -162,10 +236,21 @@ export default function Author() {
             margin: "20px 0 0",
           }}
         >
-          <span style={{ color: "#fff" }}>Where skills</span>{" "}
-          <span style={{ color: "rgba(255, 255, 255, 0.40)" }}>
-            get engineered.
-          </span>
+          {skillSlug ? (
+            <>
+              <span style={{ color: "#fff" }}>The workbench will</span>{" "}
+              <span style={{ color: "rgba(255, 255, 255, 0.40)" }}>
+                run this here.
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{ color: "#fff" }}>Where skills</span>{" "}
+              <span style={{ color: "rgba(255, 255, 255, 0.40)" }}>
+                get engineered.
+              </span>
+            </>
+          )}
         </h1>
 
         <p
@@ -179,10 +264,9 @@ export default function Author() {
             maxWidth: 560,
           }}
         >
-          The workbench is where you'll draft, refine, and publish skills with
-          skiyu's authoring assistant alongside. Catch marketing language
-          before the lint does. Test against real prompts. Ship to the catalog
-          when the work is ready.
+          {skillSlug
+            ? `Once the workbench is live, clicking "Run skill" will load ${skillSlug}'s SKILL.md, accept your input, and stream the output here — usually inside a minute. We're building that loop now.`
+            : `The workbench is where you'll draft, refine, and publish skills with skiyu's authoring assistant alongside. Catch marketing language before the lint does. Test against real prompts. Ship to the catalog when the work is ready.`}
         </p>
 
         <p
@@ -196,8 +280,9 @@ export default function Author() {
             maxWidth: 560,
           }}
         >
-          We're building it now. Drop your email and we'll tell you when it's
-          ready.
+          {skillSlug
+            ? "Drop your email and we'll let you know when this skill is runnable here."
+            : "We're building it now. Drop your email and we'll tell you when it's ready."}
         </p>
 
         <form
