@@ -61,6 +61,16 @@ export default function Author() {
   const { user } = useAuth();
   const slug = (searchParams.get("skill") ?? "").trim() || null;
 
+  // /author is the skill authoring assistant — for writing, reviewing, and
+  // publishing skills. /run is the sandbox runtime — for executing them.
+  // If someone navigates here with ?skill=<slug> (e.g. from a cached card
+  // or a bookmark), redirect them to the right surface immediately.
+  useEffect(() => {
+    if (slug) {
+      navigate(`/run?skill=${encodeURIComponent(slug)}`, { replace: true });
+    }
+  }, [slug, navigate]);
+
   const [skill, setSkill] = useState<Skill | null>(null);
   const [skillLoading, setSkillLoading] = useState(false);
   const [skillError, setSkillError] = useState<string | null>(null);
