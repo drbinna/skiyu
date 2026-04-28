@@ -30,9 +30,12 @@ interface Skill {
 }
 
 function inferInputType(skill: Skill): "url" | "text" | "file" {
-  const t = `${skill.name} ${skill.description ?? ""} ${skill.skill_md_content ?? ""}`.toLowerCase();
-  if (t.includes("clone") || t.includes("scrape") || t.includes("website") || t.includes("url")) return "url";
-  if (t.includes("pdf") || t.includes("csv") || t.includes("file") || t.includes("upload")) return "file";
+  const t = `${skill.name} ${skill.description ?? ""}`.toLowerCase();
+  // Only infer URL mode for skills explicitly about fetching/cloning websites.
+  // Using the skill_md_content here too would be too aggressive — "url" appears
+  // in many security/config skill descriptions that aren't web-fetching skills.
+  if (t.includes("clone") || t.includes("scrape") || (t.includes("website") && !t.includes("audit"))) return "url";
+  if (t.includes("pdf") || t.includes("csv") || t.includes("upload") || t.includes("spreadsheet")) return "file";
   return "text";
 }
 
@@ -307,7 +310,9 @@ export default function Run() {
                   <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.15)", marginBottom: 14 }}>OUTPUT</div>
                   {phase === "input" ? (
                     <p style={{ fontFamily: F, fontStyle: "italic", fontSize: 17, color: "rgba(255,255,255,0.28)", maxWidth: 420, lineHeight: 1.6 }}>
-                      Enter a URL and click "Run skill" — the cloned website will appear here.
+                      {skill.description
+                        ? `Provide input on the left and click "Run skill" — the output will appear here.`
+                        : `Run skill →`}
                     </p>
                   ) : running ? (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
