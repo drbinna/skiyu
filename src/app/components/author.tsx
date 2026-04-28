@@ -119,8 +119,8 @@ export default function Author() {
   }, [slug]);
 
   useEffect(() => {
-    if (skill) document.title = `${skill.name} — workbench · skiyu`;
-    else document.title = "workbench · skiyu";
+    if (skill) document.title = `${skill.name} — skill authoring assistant · skiyu`;
+    else document.title = "skill authoring assistant · skiyu";
     return () => {
       document.title = "skiyu";
     };
@@ -422,7 +422,7 @@ function Nav({
             fontFamily: M,
           }}
         >
-          {skill ? `workbench · ${skill.slug}` : "workbench"}
+          {skill ? `authoring · ${skill.slug}` : "authoring"}
         </span>
       </div>
       <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
@@ -510,7 +510,7 @@ function NoSkillState({
           color: "rgba(255, 255, 255, 0.25)",
         }}
       >
-        THE WORKBENCH
+        SKILL AUTHORING ASSISTANT
       </div>
       <h1
         style={{
@@ -540,7 +540,7 @@ function NoSkillState({
           maxWidth: 520,
         }}
       >
-        The workbench loads any skill from the catalog and runs it
+        The skill authoring assistant is where you draft, refine, and publish skills. from the catalog and runs it
         interactively. Click "Run skill" on any card and you'll land back
         here with the skill loaded and ready.
       </p>

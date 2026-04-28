@@ -59,7 +59,7 @@ export default function SkillCard({
   // so the layout never shifts.
   const previewLine =
     hover === "run"
-      ? `→ open ${skill.name} in the workbench`
+      ? `→ run ${skill.name} in the sandbox`
       : hover === "zip"
         ? `→ ${zipPreview}`
         : `updated ${formatRelative(skill.updated_at)}`;
@@ -67,11 +67,8 @@ export default function SkillCard({
   const handleRun = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      // The workbench preloads the skill via the ?skill query param so
-      // the user lands directly in a session for this skill. Today /author
-      // is a placeholder that reads the param and shows a "loading <name>"
-      // state; once the workbench ships, it becomes the actual run surface.
-      navigate(`/author?skill=${encodeURIComponent(skill.slug)}`);
+      // /run is the real sandbox runtime. /author is the authoring assistant.
+      navigate(`/run?skill=${encodeURIComponent(skill.slug)}`);
     },
     [navigate, skill.slug],
   );

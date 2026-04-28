@@ -353,7 +353,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Open the workbench →
+              Open authoring assistant →
             </button>
           </div>
           <div
@@ -533,7 +533,7 @@ export default function Home() {
                 color: "rgba(255,255,255,0.25)",
               }}
             >
-              THE WORKBENCH
+              SKILL AUTHORING ASSISTANT
             </div>
             <h2
               style={{
@@ -562,7 +562,7 @@ export default function Home() {
                 maxWidth: 480,
               }}
             >
-              Skiyu's workbench is where engineers draft, refine, and publish
+              The skill authoring assistant is where engineers draft, refine, and publish
               skills with a working assistant in the next pane. Catch
               marketing language before the lint does. Test against real
               prompts. Ship to the catalog when the work is ready.
@@ -586,7 +586,7 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              Open the workbench →
+              Open authoring assistant →
             </button>
           </div>
 
@@ -768,7 +768,7 @@ export default function Home() {
                 // what the lint will reject before publish-time. This is the
                 // page's only naming of the assistant — it's a tool-of-the-
                 // platform, not a separately-marketed AI feature.
-                desc: "Open the workbench. Skiyu's authoring assistant catches what the lint will reject — vague descriptions, marketing language, missing context — before you publish.",
+                desc: "Open the authoring assistant. It catches what the lint will reject — vague descriptions, marketing language, missing context — before you publish.",
               },
               {
                 num: "03",
@@ -816,7 +816,7 @@ export default function Home() {
               onMouseEnter={() => preloadRoute["/author"]()}
               style={{ padding: "14px 40px", borderRadius: 8, fontSize: 14 }}
             >
-              Open the workbench →
+              Open authoring assistant →
             </button>
             <button
               className="btn-ghost"
