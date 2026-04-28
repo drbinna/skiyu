@@ -6,6 +6,7 @@ import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
 import SkillCard from "./skill-card";
+import Wordmark from "./wordmark";
 import { preloadRoute } from "../routes";
 
 function NoiseOverlay() {
@@ -30,46 +31,26 @@ function NoiseOverlay() {
   return <canvas ref={c} style={{ position: "fixed", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 0, opacity: 0.3, mixBlendMode: "overlay" }} />;
 }
 
+/** Hero halftone vignette — matches the .grid-bg pattern exactly.
+ * CSS-only, no canvas, no JS. Dots on a 14px pitch, masked to transparent
+ * at center and fully opaque at edges. Sits behind all hero content. */
 function DotField() {
-  const c = useRef<HTMLCanvasElement>(null);
-  const mouse = useRef({ x: -1000, y: -1000 });
-  useEffect(() => {
-    const cv = c.current; if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    let id: number;
-    const resize = () => { cv.width = cv.offsetWidth * 2; cv.height = cv.offsetHeight * 2; };
-    resize();
-    window.addEventListener("resize", resize);
-    const onMove = (e: MouseEvent) => {
-      const r = cv.getBoundingClientRect();
-      mouse.current = { x: (e.clientX - r.left) * 2, y: (e.clientY - r.top) * 2 };
-    };
-    cv.parentElement?.addEventListener("mousemove", onMove);
-    const draw = () => {
-      ctx.clearRect(0, 0, cv.width, cv.height);
-      const sp = 40, rad = 240;
-      for (let x = sp; x < cv.width; x += sp) {
-        for (let y = sp; y < cv.height; y += sp) {
-          const dx = x - mouse.current.x, dy = y - mouse.current.y;
-          const dist = Math.sqrt(dx*dx + dy*dy);
-          const prox = Math.max(0, 1 - dist / rad);
-          const size = 1 + prox * 3;
-          const alpha = 0.06 + prox * 0.55;
-          ctx.beginPath();
-          ctx.arc(x, y, size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-          ctx.fill();
-        }
-      }
-      id = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => { cancelAnimationFrame(id); window.removeEventListener("resize", resize); cv.parentElement?.removeEventListener("mousemove", onMove); };
-  }, []);
-  return <canvas ref={c} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />;
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.18) 1.5px, transparent 1.5px)",
+        backgroundSize: "14px 14px",
+        WebkitMaskImage: "radial-gradient(ellipse 70% 70% at 50% 50%, transparent 30%, black 100%)",
+        maskImage: "radial-gradient(ellipse 70% 70% at 50% 50%, transparent 30%, black 100%)",
+        pointerEvents: "none",
+        zIndex: 0,
+      }}
+    />
+  );
 }
-
 function MorphBlob({ size = 400, top, left, opacity = 0.04 }: { size?: number; top: string; left: string; opacity?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -172,14 +153,28 @@ export default function Home() {
         .e3 { animation: fadeSlideUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.55s both; }
         .e4 { animation: fadeSlideUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.75s both; }
         .e5 { animation: fadeSlideUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.95s both; }
-        .grid-bg::before {
+        /* Halftone vignette — replaces the old uniform line grid.
+         * Dots: 3px filled circles on a 14px pitch, white at 18% opacity.
+         * Radial mask: transparent at center (60% of the viewport), solid
+         * at the edges — this produces the "denser at edges, fading center"
+         * effect from the screenshot. */
+        .grid-bg, .halftone-bg {
+          position: relative;
+        }
+        .grid-bg::before, .halftone-bg::before {
           content: '';
           position: absolute;
           inset: 0;
-          background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-          background-size: 80px 80px;
-          animation: breathe 5s ease-in-out infinite;
+          background-image: radial-gradient(circle, rgba(255,255,255,0.18) 1.5px, transparent 1.5px);
+          background-size: 14px 14px;
+          /* Mask: fades from transparent at center to opaque at edges.
+           * The radial gradient goes transparent → rgba so at the center
+           * the dots vanish; toward corners they're fully visible. */
+          -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, transparent 30%, black 100%);
+          mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, transparent 30%, black 100%);
           pointer-events: none;
+          animation: breathe 7s ease-in-out infinite;
+          z-index: 0;
         }
         .skill-card { position: relative; transition: all 0.5s cubic-bezier(0.16,1,0.3,1); overflow: hidden; }
         .skill-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent); opacity: 0; transition: opacity 0.5s; }
@@ -210,10 +205,7 @@ export default function Home() {
         transition: "all 0.5s",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-          <span
-            onClick={() => navigate("/")}
-            style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.5px", cursor: "pointer", fontFamily: "'Erode', serif" }}
-          >/ skiyu</span>
+          <Wordmark size={20} clickable />
         </div>
         <div style={{ display: "flex", gap: 36, fontSize: 13 }}>
           {[
@@ -283,7 +275,7 @@ export default function Home() {
               color: "rgba(255,255,255,0.25)",
             }}
           >
-            // skill engineering platform
+            SKILL ENGINEERING PLATFORM
           </div>
           <h1
             className="e2"
@@ -394,7 +386,7 @@ export default function Home() {
                 color: "rgba(255,255,255,0.25)",
               }}
             >
-              // featured
+              FEATURED
             </div>
             <h2
               style={{
@@ -541,7 +533,7 @@ export default function Home() {
                 color: "rgba(255,255,255,0.25)",
               }}
             >
-              // the workbench
+              THE WORKBENCH
             </div>
             <h2
               style={{
@@ -841,7 +833,7 @@ export default function Home() {
 
       {/* FOOTER */}
       <footer style={{ borderTop: "1px solid rgba(255,255,255,0.05)", padding: "32px 48px", display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1000, margin: "0 auto" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'Erode', serif", opacity: 0.25 }}>/ skiyu</span>
+        <Wordmark size={13} color="rgba(255,255,255,0.25)" />
         <div style={{ display: "flex", gap: 28, fontSize: 12, color: "rgba(255,255,255,0.2)" }}>
           {["Privacy", "Terms", "Status", "GitHub", "Discord"].map(l => (
             <span key={l} style={{ cursor: "pointer", transition: "color 0.3s" }} onMouseEnter={e => (e.target as HTMLSpanElement).style.color = "rgba(255,255,255,0.6)"} onMouseLeave={e => (e.target as HTMLSpanElement).style.color = "rgba(255,255,255,0.2)"}>{l}</span>

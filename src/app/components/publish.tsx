@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { uploadSkillPackage, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
+import Wordmark from "./wordmark";
 import { preloadRoute } from "../routes";
 
 // ── Description validators (spec §1 + §2) ──────────────────
@@ -307,8 +308,8 @@ export default function Publish() {
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <span onClick={() => navigate("/")} style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.5px", cursor: "pointer", fontFamily: F }}>/ skiyu</span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>/publish</span>
+          <Wordmark size={20} clickable />
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>publish</span>
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[

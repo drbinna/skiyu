@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router";
 import { useSkillBySlug, downloadSkill } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
 import NavAuth from "./nav-auth";
+import Wordmark from "./wordmark";
 import { preloadRoute } from "../routes";
 
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
@@ -78,24 +79,7 @@ function Shell({ children, route }: { children: React.ReactNode; route: string }
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <a
-            href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/");
-            }}
-            style={{
-              color: "#fff",
-              textDecoration: "none",
-              fontSize: 17,
-              fontWeight: 700,
-              fontFamily: F,
-              fontStyle: "italic",
-              letterSpacing: "-0.5px",
-            }}
-          >
-            / skiyu
-          </a>
+          <Wordmark size={20} clickable />
           <span style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.40)", fontFamily: M }}>
             {route}
           </span>
@@ -148,12 +132,12 @@ export default function SkillDetail() {
   // Reflect the skill name in the document title.
   useEffect(() => {
     if (data?.skill) {
-      document.title = `${data.skill.name} — / skiyu`;
+      document.title = `${data.skill.name} — skiyu`;
     } else if (slug) {
-      document.title = `${slug} — / skiyu`;
+      document.title = `${slug} — skiyu`;
     }
     return () => {
-      document.title = "/ skiyu";
+      document.title = "skiyu";
     };
   }, [data?.skill, slug]);
 
@@ -216,7 +200,7 @@ export default function SkillDetail() {
           }}
         >
           <div style={{ marginBottom: 16 }}>
-            <Kicker>// 404 · not found</Kicker>
+            <Kicker>404 · not found</Kicker>
           </div>
           <h1
             style={{
@@ -275,7 +259,7 @@ export default function SkillDetail() {
         {/* Header */}
         <div style={{ marginBottom: 48 }}>
           <Kicker>
-            // {skill.category_slug ?? "general"} · skill
+            {skill.category_slug ?? "general"} · skill
           </Kicker>
           <div style={{ display: "flex", alignItems: "baseline", gap: 4, margin: "14px 0 0" }}>
             <h1
@@ -366,7 +350,7 @@ export default function SkillDetail() {
               padding: "24px 28px",
             }}
           >
-            <Kicker>// install</Kicker>
+            <Kicker>INSTALL</Kicker>
             <p
               style={{
                 margin: "14px 0 12px",
@@ -466,7 +450,7 @@ export default function SkillDetail() {
               padding: "24px 28px",
             }}
           >
-            <Kicker>// at a glance</Kicker>
+            <Kicker>AT A GLANCE</Kicker>
             <div
               style={{
                 marginTop: 16,
@@ -509,7 +493,7 @@ export default function SkillDetail() {
         <div style={{ display: "flex", flexDirection: "column", gap: 48, maxWidth: 700 }}>
           {skill.description && (
             <section>
-              <Kicker>// what it does</Kicker>
+              <Kicker>WHAT IT DOES</Kicker>
               <p
                 style={{
                   marginTop: 12,
@@ -528,7 +512,7 @@ export default function SkillDetail() {
 
           {skill.audience && (
             <section>
-              <Kicker>// who it's for</Kicker>
+              <Kicker>WHO IT'S FOR</Kicker>
               <p
                 style={{
                   marginTop: 12,
@@ -547,7 +531,7 @@ export default function SkillDetail() {
 
           {skill.does_not_do && (
             <section>
-              <Kicker>// what it doesn't do</Kicker>
+              <Kicker>WHAT IT DOESN'T DO</Kicker>
               <p
                 style={{
                   marginTop: 12,
@@ -616,7 +600,7 @@ function AllowedTools({ frontmatter }: { frontmatter: Record<string, unknown> | 
   if (tools.length === 0) return null;
   return (
     <section>
-      <Kicker>// allowed tools</Kicker>
+      <Kicker>ALLOWED TOOLS</Kicker>
       <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
         {tools.map((t) => (
           <div

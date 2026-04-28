@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import NavAuth from "./nav-auth";
+import Wordmark from "./wordmark";
 import { preloadRoute } from "../routes";
 
 const M = "'Fragment Mono', monospace";
@@ -8,7 +9,7 @@ const F = "'Erode', serif";
 
 const DOCS_TREE = [
   { section: "Getting started", items: [
-    { id: "intro", label: "What is / skiyu?" },
+    { id: "intro", label: "What is skiyu?" },
     { id: "quickstart", label: "Quickstart" },
     { id: "installing", label: "Installing skills" },
   ]},
@@ -30,10 +31,10 @@ type Block = { type: string; text?: string; lang?: string; num?: string; title?:
 
 const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[] }> = {
   "intro": {
-    title: "What is / skiyu?",
+    title: "What is skiyu?",
     breadcrumb: "Getting started",
     body: [
-      { type: "p", text: "/ skiyu is the open marketplace where AI engineers discover, share, and install Claude skills. A skill is a self-contained instruction package that extends what Claude can do — from generating PDFs and reviewing code to building data pipelines and drafting legal contracts." },
+      { type: "p", text: "skiyu is the open marketplace where AI engineers discover, share, and install Claude skills. A skill is a self-contained instruction package that extends what Claude can do — from generating PDFs and reviewing code to building data pipelines and drafting legal contracts." },
       { type: "p", text: "Think of it as npm for AI workflows. You install a skill, and Claude immediately gains new capabilities." },
       { type: "heading", text: "What you can do" },
       { type: "p", text: "As a consumer, you can browse thousands of skills, install them with a single command, and combine them into powerful chains. As a publisher, you can package your best Claude workflows into reusable skills and share them with the community." },
@@ -42,7 +43,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
       { type: "code", lang: "text", text: "my-skill/\n├── SKILL.md          ← Instructions for Claude\n├── scripts/          ← Optional automation scripts\n├── references/       ← Optional documentation\n├── assets/           ← Optional templates, fonts, icons\n├── tests/            ← Optional test cases\n└── LICENSE.txt       ← Recommended" },
       { type: "heading", text: "Key concepts" },
       { type: "def", term: "Skill", desc: "A packaged set of instructions and tools that teach Claude a new capability." },
-      { type: "def", term: "Publisher", desc: "Anyone who creates and shares skills on / skiyu. Can be an individual or a team." },
+      { type: "def", term: "Publisher", desc: "Anyone who creates and shares skills on skiyu. Can be an individual or a team." },
       { type: "def", term: "Skill chain", desc: "Multiple skills wired together into a pipeline. Each skill's output feeds the next." },
       { type: "def", term: "Trust score", desc: "A composite score (0–100) reflecting a publisher's reliability based on ratings, installs, and history." },
       { type: "callout", variant: "info", text: "Ready to jump in? Follow the Quickstart guide to install your first skill in under 5 minutes." },
@@ -52,10 +53,10 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
     title: "Quickstart",
     breadcrumb: "Getting started",
     body: [
-      { type: "p", text: "Get up and running with / skiyu in five minutes. By the end, you'll have the CLI installed and your first skill running." },
+      { type: "p", text: "Get up and running with skiyu in five minutes. By the end, you'll have the CLI installed and your first skill running." },
       { type: "step", num: "1", title: "Install the CLI", text: "Install the skiyu CLI globally using npm. Requires Node.js 18 or later." },
       { type: "code", lang: "bash", text: "npm install -g skiyu" },
-      { type: "step", num: "2", title: "Authenticate", text: "Log in with your / skiyu account. This opens a browser window to complete authentication." },
+      { type: "step", num: "2", title: "Authenticate", text: "Log in with your skiyu account. This opens a browser window to complete authentication." },
       { type: "code", lang: "bash", text: "skiyu login" },
       { type: "step", num: "3", title: "Install a skill", text: "Install your first skill. Let's start with PDF Architect, one of the most popular skills on the platform." },
       { type: "code", lang: "bash", text: "skiyu install @synthwave/pdf-architect" },
@@ -99,7 +100,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
       { type: "def", term: "name", desc: "Required. Unique identifier for your skill. Lowercase, hyphens only." },
       { type: "def", term: "description", desc: "Required. One-line summary shown in search results and the explore page." },
       { type: "def", term: "version", desc: "Required. Semantic version (e.g. 1.0.0). Must increment with each publish." },
-      { type: "def", term: "author", desc: "Required. Your / skiyu username." },
+      { type: "def", term: "author", desc: "Required. Your skiyu username." },
       { type: "def", term: "license", desc: "Required. MIT, Apache-2.0, or proprietary." },
       { type: "def", term: "categories", desc: "Optional. One or more from: documents, code, data, devops, research, creative, legal, finance, testing, api." },
       { type: "def", term: "tags", desc: "Optional. Freeform tags for search discovery." },
@@ -117,7 +118,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
     title: "Publishing & validation",
     breadcrumb: "Publishing",
     body: [
-      { type: "p", text: "Once your skill is ready, publish it to / skiyu so others can discover and install it." },
+      { type: "p", text: "Once your skill is ready, publish it to skiyu so others can discover and install it." },
       { type: "heading", text: "Validate first" },
       { type: "p", text: "Before publishing, run validation to catch issues early. This checks your package structure, frontmatter, and runs linting on any scripts." },
       { type: "code", lang: "bash", text: "skiyu validate ./my-skill" },
@@ -128,7 +129,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
       { type: "heading", text: "Publishing" },
       { type: "p", text: "When validation passes, publish your skill. This packages the directory into a .skill file, uploads it, and submits it for review." },
       { type: "code", lang: "bash", text: "skiyu publish ./my-skill" },
-      { type: "code", lang: "text", text: "✓ Packaged my-skill@1.0.0 (24KB)\n✓ Uploaded to / skiyu\n✓ Submitted for review\n\nYour skill will be reviewed within 24 hours." },
+      { type: "code", lang: "text", text: "✓ Packaged my-skill@1.0.0 (24KB)\n✓ Uploaded to skiyu\n✓ Submitted for review\n\nYour skill will be reviewed within 24 hours." },
       { type: "heading", text: "What happens during review" },
       { type: "p", text: "Every skill goes through automated checks: package structure validation, script security scanning (static analysis for malicious patterns), and an AI quality score (0–100). Free skills from trusted publishers with a track record are auto-approved. First-time publishers go through human review." },
       { type: "heading", text: "Versioning" },
@@ -153,7 +154,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
       { type: "heading", text: "Global options" },
       { type: "code", lang: "bash", text: "skiyu [command] [options]\n\n  --help, -h       Show help for a command\n  --version, -v    Print CLI version\n  --verbose        Show detailed output\n  --json           Output as JSON (for scripting)" },
       { type: "heading", text: "Authentication" },
-      { type: "cmd", name: "skiyu login", desc: "Authenticate with your / skiyu account. Opens a browser for OAuth." },
+      { type: "cmd", name: "skiyu login", desc: "Authenticate with your skiyu account. Opens a browser for OAuth." },
       { type: "cmd", name: "skiyu logout", desc: "Clear stored credentials." },
       { type: "cmd", name: "skiyu whoami", desc: "Print the currently authenticated user." },
       { type: "heading", text: "Consuming skills" },
@@ -169,7 +170,7 @@ const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[]
       { type: "cmd", name: "skiyu init", desc: "Scaffold a new skill project in the current directory." },
       { type: "cmd", name: "skiyu validate [path]", desc: "Validate a skill package. Checks structure, frontmatter, and runs linting." },
       { type: "cmd", name: "skiyu test [path]", desc: "Run the skill's test suite in a sandboxed environment." },
-      { type: "cmd", name: "skiyu publish [path]", desc: "Package and publish a skill to / skiyu. Runs validation first." },
+      { type: "cmd", name: "skiyu publish [path]", desc: "Package and publish a skill to skiyu. Runs validation first." },
       { type: "cmd", name: "skiyu unpublish <skill@version>", desc: "Deprecate a specific version (does not delete — existing installs continue working)." },
     ]
   },
@@ -314,8 +315,8 @@ export default function Docs() {
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <span onClick={() => navigate("/")} style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.5px", cursor: "pointer", fontFamily: F }}>/ skiyu</span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>/docs</span>
+          <Wordmark size={20} clickable />
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>docs</span>
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[
@@ -447,7 +448,7 @@ export default function Docs() {
           </div>
 
           <div style={{ marginTop: 40, padding: "20px 0", borderTop: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, fontFamily: F, opacity: 0.12, cursor: "pointer" }} onClick={() => navigate("/")}>/ skiyu</span>
+            <Wordmark size={13} clickable color="rgba(255,255,255,0.12)" />
             <span style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.08)" }}>
               Found an error? Edit this page on GitHub →
             </span>

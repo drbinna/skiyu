@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import NavAuth from "./nav-auth";
+import Wordmark from "./wordmark";
 
 const F = "'Erode', serif";
 const M = "'Fragment Mono', monospace";
@@ -422,8 +423,8 @@ function Shell({ children }: { children: React.ReactNode }) {
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <a href="/" style={{ color: "#fff", textDecoration: "none", fontSize: 17, fontWeight: 700, fontFamily: F, letterSpacing: "-0.5px" }}>/ skiyu</a>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>/admin/staged</span>
+          <Wordmark size={20} clickable />
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>admin · staged</span>
         </div>
         <NavAuth />
       </nav>

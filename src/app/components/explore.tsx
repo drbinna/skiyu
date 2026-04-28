@@ -5,6 +5,7 @@ import NavAuth from "./nav-auth";
 import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
 import SkillCard from "./skill-card";
+import Wordmark from "./wordmark";
 import type { SkillCatalogItem } from "@/lib/types";
 import { preloadRoute } from "../routes";
 
@@ -148,11 +149,8 @@ export default function Explore() {
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <span
-            onClick={() => navigate("/")}
-            style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.5px", cursor: "pointer", fontFamily: F }}
-          >/ skiyu</span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>/explore</span>
+          <Wordmark size={20} clickable />
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>explore</span>
         </div>
         <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
           {[
@@ -371,10 +369,7 @@ export default function Explore() {
             padding: "32px 24px", borderTop: "1px solid rgba(255,255,255,0.04)",
             display: "flex", justifyContent: "space-between", alignItems: "center",
           }}>
-            <span
-              onClick={() => navigate("/")}
-              style={{ fontSize: 13, fontWeight: 600, fontFamily: F, opacity: 0.15, cursor: "pointer" }}
-            >/ skiyu</span>
+            <Wordmark size={13} clickable color="rgba(255,255,255,0.15)" />
             <span style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.1)" }}>
               Press / to search
             </span>

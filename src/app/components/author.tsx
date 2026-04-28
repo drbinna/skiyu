@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
 import NavAuth from "./nav-auth";
+import Wordmark from "./wordmark";
 import { preloadRoute } from "../routes";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -118,10 +119,10 @@ export default function Author() {
   }, [slug]);
 
   useEffect(() => {
-    if (skill) document.title = `${skill.name} — workbench / skiyu`;
-    else document.title = "workbench / skiyu";
+    if (skill) document.title = `${skill.name} — workbench · skiyu`;
+    else document.title = "workbench · skiyu";
     return () => {
-      document.title = "/ skiyu";
+      document.title = "skiyu";
     };
   }, [skill]);
 
@@ -413,24 +414,7 @@ function Nav({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <a
-          href="/"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate("/");
-          }}
-          style={{
-            color: "#fff",
-            textDecoration: "none",
-            fontSize: 17,
-            fontWeight: 700,
-            fontFamily: F,
-            fontStyle: "italic",
-            letterSpacing: "-0.5px",
-          }}
-        >
-          / skiyu
-        </a>
+        <Wordmark size={20} clickable />
         <span
           style={{
             fontSize: 12,
@@ -526,7 +510,7 @@ function NoSkillState({
           color: "rgba(255, 255, 255, 0.25)",
         }}
       >
-        // the workbench
+        THE WORKBENCH
       </div>
       <h1
         style={{
@@ -666,7 +650,7 @@ function SkillPane({ skill }: { skill: Skill }) {
           color: "rgba(255, 255, 255, 0.25)",
         }}
       >
-        // skill loaded
+        SKILL LOADED
       </div>
       <h1
         style={{
@@ -720,7 +704,7 @@ function SkillPane({ skill }: { skill: Skill }) {
 
       {skill.audience && (
         <div style={{ marginTop: 20 }}>
-          <Kicker>// for</Kicker>
+          <Kicker>FOR</Kicker>
           <p
             style={{
               marginTop: 6,
@@ -737,7 +721,7 @@ function SkillPane({ skill }: { skill: Skill }) {
       )}
 
       <div style={{ marginTop: 24 }}>
-        <Kicker>// SKILL.md</Kicker>
+        <Kicker>SKILL.md</Kicker>
         <pre
           style={{
             marginTop: 8,
@@ -837,7 +821,7 @@ function ChatPane({
       >
         {isEmpty ? (
           <div style={{ maxWidth: 640, margin: "0 auto", paddingTop: 24 }}>
-            <Kicker>// ready</Kicker>
+            <Kicker>READY</Kicker>
             <h2
               style={{
                 marginTop: 12,
