@@ -8,27 +8,6 @@ import { useAuth } from "@/lib/auth";
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
 const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
 
-// Map Twin statuses to user-friendly labels
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Preparing…",
-  started: "Starting Twin agent…",
-  login_required: "Waiting for Claude login…",
-  login_completed: "Logged in to Claude",
-  skills_page_opened: "Opened Claude Skills page",
-  awaiting_upload_confirmation: "Ready to upload — confirm in Twin",
-  uploading: "Uploading skill…",
-  uploaded: "Skill uploaded",
-  installed: "Skill installed in Claude",
-  awaiting_test_confirmation: "Ready to test — confirm in Twin",
-  test_prompt_sent: "Running test prompt…",
-  run_success: "✓ Deployed and tested",
-  run_failed: "Deploy failed",
-  needs_manual_review: "Needs manual review",
-};
-
-const TERMINAL = new Set(["run_success", "run_failed", "needs_manual_review"]);
-const SUCCESS = new Set(["run_success", "installed", "uploaded"]);
-
 interface SkillCardProps {
   skill: SkillCatalogItem;
   onOpen?: (skill: SkillCatalogItem) => void;
@@ -43,65 +22,30 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Twin install state
-  const [installId, setInstallId] = useState<string | null>(null);
-  const [installStatus, setInstallStatus] = useState<string | null>(null);
-  const [installMessage, setInstallMessage] = useState<string | null>(null);
-  const [deploying, setDeploying] = useState(false);
+  // Deploy state
+  const [deployPhase, setDeployPhase] = useState<"idle" | "starting" | "live" | "success" | "error">("idle");
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
-  // Subscribe to realtime updates when we have an install_id
+  // Auto-clear success
   useEffect(() => {
-    if (!installId) return;
-
-    const channel = supabase
-      .channel(`install-${installId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "skill_installs",
-          filter: `id=eq.${installId}`,
-        },
-        (payload) => {
-          const row = payload.new as { status: string; message: string | null; error: unknown };
-          setInstallStatus(row.status);
-          setInstallMessage(row.message);
-          if (TERMINAL.has(row.status)) {
-            setDeploying(false);
-          }
-        },
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [installId]);
-
-  // Auto-clear success after 6 seconds
-  useEffect(() => {
-    if (installStatus && SUCCESS.has(installStatus)) {
-      const t = setTimeout(() => {
-        setInstallId(null);
-        setInstallStatus(null);
-        setInstallMessage(null);
-      }, 6000);
+    if (deployPhase === "success") {
+      const t = setTimeout(() => { setDeployPhase("idle"); setLiveUrl(null); }, 6000);
       return () => clearTimeout(t);
     }
-  }, [installStatus]);
+  }, [deployPhase]);
 
   const previewLine =
-    installStatus && SUCCESS.has(installStatus)
-      ? "✓ Deployed to your Claude workspace"
-      : hover === "deploy"
-        ? "→ deploy to Claude via Twin"
-        : hover === "zip"
-          ? `→ ${skill.slug}.zip`
-          : `updated ${formatRelative(skill.updated_at)}`;
+    deployPhase === "success" ? "✓ Deployed to your Claude workspace"
+    : deployPhase === "live" ? "Agent running — log in if prompted"
+    : hover === "deploy" ? "→ deploy to Claude"
+    : hover === "zip" ? `→ ${skill.slug}.zip`
+    : `updated ${formatRelative(skill.updated_at)}`;
 
-  // ── Deploy via Twin ─────────────────────────────────────────
+  // ── Deploy via Browser Use Cloud ────────────────────────────
   const handleDeploy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (deploying) return;
+    if (deployPhase === "starting" || deployPhase === "live") return;
 
     if (!user) {
       setError("Sign in to deploy");
@@ -109,10 +53,9 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
       return;
     }
 
-    setDeploying(true);
-    setInstallStatus("pending");
-    setInstallMessage("Preparing…");
-    setError(null);
+    setDeployPhase("starting");
+    setDeployError(null);
+    setLiveUrl(null);
 
     try {
       const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
@@ -120,7 +63,7 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? anonKey;
 
-      const res = await fetch(`${sbBase}/functions/v1/twin-install`, {
+      const res = await fetch(`${sbBase}/functions/v1/deploy-agent`, {
         method: "POST",
         headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
         body: JSON.stringify({ skill_slug: skill.slug }),
@@ -128,21 +71,67 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Failed to start deploy");
-        setDeploying(false);
-        setInstallStatus(null);
+        setDeployError(data.error ?? "Deploy failed");
+        setDeployPhase("error");
         return;
       }
 
-      setInstallId(data.install_id);
-      setInstallStatus("started");
-      setInstallMessage("Twin agent started…");
+      if (data.live_url) {
+        setLiveUrl(data.live_url);
+        setDeployPhase("live");
+      } else {
+        // No live URL — treat as started but can't show browser
+        setDeployPhase("live");
+      }
+
+      // Poll for task completion
+      if (data.task_id) {
+        pollTaskStatus(data.task_id, sbBase, anonKey, data.install_id);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Deploy failed");
-      setDeploying(false);
-      setInstallStatus(null);
+      setDeployError(err instanceof Error ? err.message : "Deploy failed");
+      setDeployPhase("error");
     }
-  }, [user, skill.slug, deploying]);
+  }, [user, skill.slug, deployPhase]);
+
+  // Poll the install record for status changes
+  const pollTaskStatus = useCallback((taskId: string, sbBase: string, anonKey: string, installId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? anonKey;
+
+        const { data: install } = await supabase
+          .from("skill_installs")
+          .select("status, message")
+          .eq("id", installId)
+          .maybeSingle();
+
+        if (install) {
+          if (install.status === "run_success" || install.status === "installed" || install.status === "uploaded") {
+            setDeployPhase("success");
+            setLiveUrl(null);
+            clearInterval(interval);
+          } else if (install.status === "run_failed") {
+            setDeployError(install.message ?? "Deploy failed");
+            setDeployPhase("error");
+            setLiveUrl(null);
+            clearInterval(interval);
+          }
+        }
+      } catch { /* keep polling */ }
+    }, 5000);
+
+    // Stop polling after 5 minutes
+    setTimeout(() => clearInterval(interval), 300_000);
+  }, []);
+
+  // Close live view
+  const handleCloseLive = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLiveUrl(null);
+    setDeployPhase("idle");
+  }, []);
 
   // ── Download ────────────────────────────────────────────────
   const handleZip = useCallback(async (e: React.MouseEvent) => {
@@ -158,21 +147,21 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
   }, [skill.id, skill.name, userId, downloading]);
 
   const openCard = useCallback(() => {
+    if (deployPhase === "live") return; // Don't navigate during live view
     if (preferModal && onOpen) onOpen(skill);
     else navigate(`/skills/${skill.slug}`);
-  }, [preferModal, onOpen, skill, navigate]);
+  }, [preferModal, onOpen, skill, navigate, deployPhase]);
 
   const onCardKey = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCard(); }
   }, [openCard]);
 
-  const isActive = deploying || (installStatus && !TERMINAL.has(installStatus));
-  const isSuccess = installStatus && SUCCESS.has(installStatus);
-  const isFailed = installStatus === "run_failed" || installStatus === "needs_manual_review";
+  const isActive = deployPhase === "starting" || deployPhase === "live";
 
   return (
     <div
-      role="link" tabIndex={0} onClick={openCard} onKeyDown={onCardKey}
+      role="link" tabIndex={0}
+      onClick={openCard} onKeyDown={onCardKey}
       style={{
         background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
         borderTop: "2px solid #22d3ee", borderRadius: 10, padding: 20,
@@ -212,71 +201,94 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
 
       <div style={{ flex: 1 }} />
 
-      {/* Preview / status line */}
+      {/* Status line */}
       <div style={{
         height: 16, fontFamily: M, fontSize: 11, marginTop: 14,
-        color: isSuccess ? "#4ade80" : isFailed ? "#fca5a5" : error ? "#fca5a5" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
+        color: deployPhase === "success" ? "#4ade80" : error || deployError ? "#fca5a5" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
         transition: "color 150ms", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>
-        {error ?? previewLine}
+        {error ?? deployError ?? previewLine}
       </div>
 
-      {/* Install progress panel */}
-      {isActive && installStatus && (
+      {/* Live browser view */}
+      {deployPhase === "live" && liveUrl && (
         <div onClick={(e) => e.stopPropagation()} style={{
-          marginTop: 10, padding: "12px 14px",
-          background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 8, display: "flex", flexDirection: "column", gap: 6,
+          marginTop: 10, borderRadius: 8, overflow: "hidden",
+          border: "1px solid rgba(34,211,238,0.25)",
+          background: "#000",
         }}>
-          <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
-            INSTALLING VIA TWIN
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{
-              width: 10, height: 10, borderRadius: "50%",
-              border: "2px solid rgba(255,255,255,0.15)",
-              borderTopColor: "#22d3ee",
-              animation: "spin 0.8s linear infinite",
-            }} />
-            <span style={{ fontFamily: M, fontSize: 12, color: "rgba(255,255,255,0.70)" }}>
-              {STATUS_LABELS[installStatus] ?? installStatus}
-            </span>
-          </div>
-          {installMessage && installMessage !== STATUS_LABELS[installStatus] && (
-            <div style={{ fontFamily: M, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
-              {installMessage}
+          <div style={{
+            padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between",
+            background: "rgba(34,211,238,0.08)", borderBottom: "1px solid rgba(34,211,238,0.15)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: "50%", background: "#22d3ee",
+                animation: "pulse 1.5s ease-in-out infinite",
+              }} />
+              <span style={{ fontFamily: M, fontSize: 10, fontWeight: 600, color: "#22d3ee", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                LIVE — log into Claude if prompted
+              </span>
             </div>
-          )}
+            <button type="button" onClick={handleCloseLive}
+              style={{ fontFamily: M, fontSize: 10, color: "rgba(255,255,255,0.40)", background: "none", border: "none", cursor: "pointer" }}>
+              ✕ Close
+            </button>
+          </div>
+          <iframe
+            src={liveUrl}
+            style={{ width: "100%", height: 400, border: "none", background: "#fff" }}
+            allow="clipboard-read; clipboard-write"
+            title="Browser agent — deploy to Claude"
+          />
+          <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
+        </div>
+      )}
+
+      {/* Starting spinner */}
+      {deployPhase === "starting" && (
+        <div onClick={(e) => e.stopPropagation()} style={{
+          marginTop: 10, padding: "14px", background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <div style={{
+            width: 14, height: 14, borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.10)", borderTopColor: "#22d3ee",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <span style={{ fontFamily: M, fontSize: 12, color: "rgba(255,255,255,0.60)" }}>
+            Preparing deploy agent…
+          </span>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
 
-      {/* Error/failure detail */}
-      {isFailed && installMessage && (
+      {/* Error detail */}
+      {deployPhase === "error" && deployError && (
         <div onClick={(e) => e.stopPropagation()} style={{
           marginTop: 8, padding: "8px 10px",
           background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.18)",
           borderRadius: 6, fontFamily: M, fontSize: 11, color: "#fca5a5",
         }}>
-          {installMessage}
+          {deployError}
         </div>
       )}
 
       {/* Buttons */}
-      {!isActive && (
+      {!isActive && !liveUrl && (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button type="button" onClick={handleDeploy}
             onMouseEnter={() => setHover("deploy")} onMouseLeave={() => setHover(null)}
-            disabled={deploying}
             style={{
               flex: 1, padding: "10px 14px",
-              background: isSuccess ? "rgba(74,222,128,0.12)" : "#fff",
-              color: isSuccess ? "#4ade80" : "#000",
-              border: isSuccess ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.10)",
+              background: deployPhase === "success" ? "rgba(74,222,128,0.12)" : "#fff",
+              color: deployPhase === "success" ? "#4ade80" : "#000",
+              border: deployPhase === "success" ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.10)",
               borderRadius: 6, fontFamily: M, fontSize: 12, fontWeight: 600, letterSpacing: "0.04em",
               cursor: "pointer", transition: "all 150ms",
             }}>
-            {isSuccess ? "✓ Deployed" : isFailed ? "Retry" : "Deploy to Claude"}
+            {deployPhase === "success" ? "✓ Deployed" : deployPhase === "error" ? "Retry" : "Deploy to Claude"}
           </button>
           <button type="button" onClick={handleZip}
             onMouseEnter={() => setHover("zip")} onMouseLeave={() => setHover(null)}
