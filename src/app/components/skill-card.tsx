@@ -8,32 +8,26 @@ import { useAuth } from "@/lib/auth";
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
 const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
 
-// Session cache: once we know the user has a stored key, we don't
-// re-check on every card mount. Reset on sign-out (page reload).
-let _keyStatus: "unknown" | "has_key" | "no_key" = "unknown";
+// Map Twin statuses to user-friendly labels
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Preparing…",
+  started: "Starting Twin agent…",
+  login_required: "Waiting for Claude login…",
+  login_completed: "Logged in to Claude",
+  skills_page_opened: "Opened Claude Skills page",
+  awaiting_upload_confirmation: "Ready to upload — confirm in Twin",
+  uploading: "Uploading skill…",
+  uploaded: "Skill uploaded",
+  installed: "Skill installed in Claude",
+  awaiting_test_confirmation: "Ready to test — confirm in Twin",
+  test_prompt_sent: "Running test prompt…",
+  run_success: "✓ Deployed and tested",
+  run_failed: "Deploy failed",
+  needs_manual_review: "Needs manual review",
+};
 
-async function checkKeyStatus(): Promise<boolean> {
-  if (_keyStatus !== "unknown") return _keyStatus === "has_key";
-  try {
-    const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
-    const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
-    const { data: sess } = await supabase.auth.getSession();
-    const token = sess.session?.access_token;
-    if (!token) { _keyStatus = "no_key"; return false; }
-
-    const res = await fetch(`${sbBase}/functions/v1/deploy-to-claude`, {
-      method: "POST",
-      headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
-      body: JSON.stringify({ action: "check-key" }),
-    });
-    const data = await res.json();
-    _keyStatus = data.has_key ? "has_key" : "no_key";
-    return data.has_key === true;
-  } catch {
-    _keyStatus = "no_key";
-    return false;
-  }
-}
+const TERMINAL = new Set(["run_success", "run_failed", "needs_manual_review"]);
+const SUCCESS = new Set(["run_success", "installed", "uploaded"]);
 
 interface SkillCardProps {
   skill: SkillCatalogItem;
@@ -49,73 +43,76 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [showSetup, setShowSetup] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // Twin install state
+  const [installId, setInstallId] = useState<string | null>(null);
+  const [installStatus, setInstallStatus] = useState<string | null>(null);
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState(false);
 
-  const [deployPhase, setDeployPhase] = useState<"idle" | "deploying" | "success" | "error">("idle");
-  const [deployError, setDeployError] = useState<string | null>(null);
-
-  // Check key status once per session
+  // Subscribe to realtime updates when we have an install_id
   useEffect(() => {
-    if (!user) { setHasKey(false); return; }
-    checkKeyStatus().then(setHasKey);
-  }, [user]);
+    if (!installId) return;
 
-  const sizeLabel = typeof skill.package_size_bytes === "number" && skill.package_size_bytes > 0
-    ? `~${Math.round(skill.package_size_bytes / 1024)} KB` : "—";
-  const zipPreview = `${skill.slug}.zip · ${sizeLabel} · ${skill.github_license || "N/A"}`;
+    const channel = supabase
+      .channel(`install-${installId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "skill_installs",
+          filter: `id=eq.${installId}`,
+        },
+        (payload) => {
+          const row = payload.new as { status: string; message: string | null; error: unknown };
+          setInstallStatus(row.status);
+          setInstallMessage(row.message);
+          if (TERMINAL.has(row.status)) {
+            setDeploying(false);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [installId]);
+
+  // Auto-clear success after 6 seconds
+  useEffect(() => {
+    if (installStatus && SUCCESS.has(installStatus)) {
+      const t = setTimeout(() => {
+        setInstallId(null);
+        setInstallStatus(null);
+        setInstallMessage(null);
+      }, 6000);
+      return () => clearTimeout(t);
+    }
+  }, [installStatus]);
 
   const previewLine =
-    deployPhase === "success" ? "✓ Deployed to your Claude workspace"
-    : hover === "deploy" ? "→ one-click deploy to Claude"
-    : hover === "zip" ? `→ ${zipPreview}`
-    : `updated ${formatRelative(skill.updated_at)}`;
+    installStatus && SUCCESS.has(installStatus)
+      ? "✓ Deployed to your Claude workspace"
+      : hover === "deploy"
+        ? "→ deploy to Claude via Twin"
+        : hover === "zip"
+          ? `→ ${skill.slug}.zip`
+          : `updated ${formatRelative(skill.updated_at)}`;
 
-  // ── Save API key (first-time setup) ─────────────────────────
-  const handleSaveKey = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
+  // ── Deploy via Twin ─────────────────────────────────────────
+  const handleDeploy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const key = apiKeyInput.trim();
-    if (!key.startsWith("sk-ant-")) { setSaveError("Key must start with sk-ant-"); return; }
+    if (deploying) return;
 
-    setSaving(true);
-    setSaveError(null);
-
-    try {
-      const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
-      const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? anonKey;
-
-      const res = await fetch(`${sbBase}/functions/v1/deploy-to-claude`, {
-        method: "POST",
-        headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "save-key", anthropic_api_key: key }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setSaveError(data.error ?? "Failed to save"); setSaving(false); return; }
-
-      // Key saved — update cache, close setup, auto-deploy this skill
-      _keyStatus = "has_key";
-      setHasKey(true);
-      setShowSetup(false);
-      setApiKeyInput("");
-      setSaving(false);
-      // Auto-deploy the skill they were trying to deploy
-      void doDeploy();
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save");
-      setSaving(false);
+    if (!user) {
+      setError("Sign in to deploy");
+      setTimeout(() => setError(null), 3000);
+      return;
     }
-  }, [apiKeyInput, skill.slug]);
 
-  // ── Deploy (one-click after setup) ──────────────────────────
-  const doDeploy = useCallback(async () => {
-    setDeployPhase("deploying");
-    setDeployError(null);
+    setDeploying(true);
+    setInstallStatus("pending");
+    setInstallMessage("Preparing…");
+    setError(null);
 
     try {
       const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
@@ -123,51 +120,29 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? anonKey;
 
-      const res = await fetch(`${sbBase}/functions/v1/deploy-to-claude`, {
+      const res = await fetch(`${sbBase}/functions/v1/twin-install`, {
         method: "POST",
         headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
         body: JSON.stringify({ skill_slug: skill.slug }),
       });
-      const data = await res.json();
 
+      const data = await res.json();
       if (!res.ok) {
-        if (data.needs_setup) {
-          setDeployPhase("idle");
-          setShowSetup(true);
-          return;
-        }
-        setDeployError(data.error ?? "Deploy failed");
-        setDeployPhase("error");
+        setError(data.error ?? "Failed to start deploy");
+        setDeploying(false);
+        setInstallStatus(null);
         return;
       }
 
-      setDeployPhase("success");
-      window.setTimeout(() => setDeployPhase("idle"), 4000);
+      setInstallId(data.install_id);
+      setInstallStatus("started");
+      setInstallMessage("Twin agent started…");
     } catch (err) {
-      setDeployError(err instanceof Error ? err.message : "Deploy failed");
-      setDeployPhase("error");
+      setError(err instanceof Error ? err.message : "Deploy failed");
+      setDeploying(false);
+      setInstallStatus(null);
     }
-  }, [skill.slug]);
-
-  const handleDeployClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (deployPhase === "deploying") return;
-
-    if (!user) {
-      // Not signed in — prompt to sign in first
-      setDeployError("Sign in to deploy skills to Claude");
-      setDeployPhase("error");
-      window.setTimeout(() => { setDeployPhase("idle"); setDeployError(null); }, 3000);
-      return;
-    }
-
-    if (hasKey === false) {
-      setShowSetup(true);
-      return;
-    }
-
-    void doDeploy();
-  }, [user, hasKey, deployPhase, doDeploy]);
+  }, [user, skill.slug, deploying]);
 
   // ── Download ────────────────────────────────────────────────
   const handleZip = useCallback(async (e: React.MouseEvent) => {
@@ -177,20 +152,23 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
     const res = await downloadSkill(skill.id, skill.name, userId);
     if (!res.success) {
       setError(res.error ?? "Download failed");
-      window.setTimeout(() => setError(null), 4000);
+      setTimeout(() => setError(null), 4000);
     }
-    window.setTimeout(() => setDownloading(false), 1200);
+    setTimeout(() => setDownloading(false), 1200);
   }, [skill.id, skill.name, userId, downloading]);
 
   const openCard = useCallback(() => {
-    if (showSetup) return; // Don't navigate while setup is open
     if (preferModal && onOpen) onOpen(skill);
     else navigate(`/skills/${skill.slug}`);
-  }, [preferModal, onOpen, skill, navigate, showSetup]);
+  }, [preferModal, onOpen, skill, navigate]);
 
   const onCardKey = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCard(); }
   }, [openCard]);
+
+  const isActive = deploying || (installStatus && !TERMINAL.has(installStatus));
+  const isSuccess = installStatus && SUCCESS.has(installStatus);
+  const isFailed = installStatus === "run_failed" || installStatus === "needs_manual_review";
 
   return (
     <div
@@ -234,67 +212,71 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
 
       <div style={{ flex: 1 }} />
 
-      {/* Preview line */}
+      {/* Preview / status line */}
       <div style={{
         height: 16, fontFamily: M, fontSize: 11, marginTop: 14,
-        color: deployPhase === "success" ? "#4ade80" : error || deployError ? "#fca5a5" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
+        color: isSuccess ? "#4ade80" : isFailed ? "#fca5a5" : error ? "#fca5a5" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
         transition: "color 150ms", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>
-        {error ?? deployError ?? previewLine}
+        {error ?? previewLine}
       </div>
 
-      {/* Setup panel — shown once, first-time only */}
-      {showSetup && (
-        <form onClick={(e) => e.stopPropagation()} onSubmit={handleSaveKey}
-          style={{ marginTop: 10, padding: "14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Install progress panel */}
+      {isActive && installStatus && (
+        <div onClick={(e) => e.stopPropagation()} style={{
+          marginTop: 10, padding: "12px 14px",
+          background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 8, display: "flex", flexDirection: "column", gap: 6,
+        }}>
           <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}>
-            CONNECT ANTHROPIC — ONE TIME SETUP
+            INSTALLING VIA TWIN
           </div>
-          <div style={{ fontFamily: F, fontStyle: "italic", fontSize: 12, color: "rgba(255,255,255,0.50)", lineHeight: 1.5 }}>
-            Your API key is encrypted and stored securely. After this, every deploy is one click.
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: "50%",
+              border: "2px solid rgba(255,255,255,0.15)",
+              borderTopColor: "#22d3ee",
+              animation: "spin 0.8s linear infinite",
+            }} />
+            <span style={{ fontFamily: M, fontSize: 12, color: "rgba(255,255,255,0.70)" }}>
+              {STATUS_LABELS[installStatus] ?? installStatus}
+            </span>
           </div>
-          <input type="password" placeholder="sk-ant-api03-..." value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)} onClick={(e) => e.stopPropagation()}
-            style={{ padding: "9px 11px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 5, color: "#fff", fontFamily: M, fontSize: 12, outline: "none", width: "100%", boxSizing: "border-box" }} />
-          {saveError && <div style={{ fontFamily: M, fontSize: 11, color: "#fca5a5" }}>{saveError}</div>}
-          <div style={{ display: "flex", gap: 6 }}>
-            <button type="submit" disabled={!apiKeyInput.trim() || saving}
-              style={{ flex: 1, padding: "9px", background: apiKeyInput.trim() && !saving ? "#fff" : "rgba(255,255,255,0.10)", color: apiKeyInput.trim() && !saving ? "#000" : "rgba(255,255,255,0.40)", border: "none", borderRadius: 5, fontFamily: M, fontSize: 11, fontWeight: 600, cursor: apiKeyInput.trim() && !saving ? "pointer" : "not-allowed" }}>
-              {saving ? "Saving…" : "Connect & deploy"}
-            </button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); setShowSetup(false); setSaveError(null); }}
-              style={{ padding: "9px 12px", background: "transparent", color: "rgba(255,255,255,0.40)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, fontFamily: M, fontSize: 11, cursor: "pointer" }}>
-              Cancel
-            </button>
-          </div>
-          <div style={{ fontFamily: M, fontSize: 10, color: "rgba(255,255,255,0.30)", lineHeight: 1.5 }}>
-            Get your key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()} style={{ color: "rgba(255,255,255,0.50)", textDecoration: "underline" }}>
-              console.anthropic.com
-            </a>
-          </div>
-        </form>
+          {installMessage && installMessage !== STATUS_LABELS[installStatus] && (
+            <div style={{ fontFamily: M, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+              {installMessage}
+            </div>
+          )}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {/* Error/failure detail */}
+      {isFailed && installMessage && (
+        <div onClick={(e) => e.stopPropagation()} style={{
+          marginTop: 8, padding: "8px 10px",
+          background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.18)",
+          borderRadius: 6, fontFamily: M, fontSize: 11, color: "#fca5a5",
+        }}>
+          {installMessage}
+        </div>
       )}
 
       {/* Buttons */}
-      {!showSetup && (
+      {!isActive && (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button type="button" onClick={handleDeployClick}
+          <button type="button" onClick={handleDeploy}
             onMouseEnter={() => setHover("deploy")} onMouseLeave={() => setHover(null)}
-            disabled={deployPhase === "deploying"}
+            disabled={deploying}
             style={{
               flex: 1, padding: "10px 14px",
-              background: deployPhase === "success" ? "rgba(74,222,128,0.12)" : deployPhase === "deploying" ? "rgba(255,255,255,0.10)" : "#fff",
-              color: deployPhase === "success" ? "#4ade80" : deployPhase === "deploying" ? "rgba(255,255,255,0.50)" : "#000",
-              border: deployPhase === "success" ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.10)",
+              background: isSuccess ? "rgba(74,222,128,0.12)" : "#fff",
+              color: isSuccess ? "#4ade80" : "#000",
+              border: isSuccess ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.10)",
               borderRadius: 6, fontFamily: M, fontSize: 12, fontWeight: 600, letterSpacing: "0.04em",
-              cursor: deployPhase === "deploying" ? "wait" : "pointer", transition: "all 150ms",
+              cursor: "pointer", transition: "all 150ms",
             }}>
-            {deployPhase === "success" ? "✓ Deployed"
-              : deployPhase === "deploying" ? "Deploying…"
-              : deployPhase === "error" ? "Retry"
-              : hasKey === false ? "Connect to deploy"
-              : "Deploy to Claude"}
+            {isSuccess ? "✓ Deployed" : isFailed ? "Retry" : "Deploy to Claude"}
           </button>
           <button type="button" onClick={handleZip}
             onMouseEnter={() => setHover("zip")} onMouseLeave={() => setHover(null)}
