@@ -756,9 +756,8 @@ export default function Home() {
             {[
               {
                 num: "01",
-                title: "Install",
-                // Honest: paste step exists, no claims of instant.
-                desc: "Copy the install command from any skill. Paste it into your Claude Code terminal. The skill is available on the next prompt.",
+                title: "Deploy",
+                desc: "Click 'Deploy to Claude' on any skill. Skiyu installs it directly into your Claude workspace via the API — one click, no downloads, no terminal.",
               },
               {
                 num: "02",
