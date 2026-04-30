@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from "react";
+import { useState, useCallback, useRef, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import type { SkillCatalogItem } from "@/lib/types";
 import { downloadSkill } from "@/lib/hooks";
@@ -7,6 +7,18 @@ import { useAuth } from "@/lib/auth";
 
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
 const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
+
+interface TraceEvent {
+  type: string;
+  message?: string;
+  output?: string;
+  error?: boolean;
+  live_url?: string;
+  needs_login?: boolean;
+  summary?: string;
+  duration_ms?: number;
+  [key: string]: unknown;
+}
 
 interface SkillCardProps {
   skill: SkillCatalogItem;
@@ -22,64 +34,24 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Deploy state
   const [deploying, setDeploying] = useState(false);
-  const [liveUrl, setLiveUrl] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const isSuccess = deployStatus === "complete";
+  const isFailed = deployStatus === "error";
+  const isRunning = deploying && !isSuccess && !isFailed;
 
   const previewLine =
-    deployStatus === "completed" || deployStatus === "done"
-      ? "✓ Deployed to your Claude workspace"
-      : hover === "deploy"
-        ? "→ deploy to Claude"
-        : hover === "zip"
-          ? `→ ${skill.slug}.zip`
-          : `updated ${formatRelative(skill.updated_at)}`;
+    isSuccess ? "✓ Deployed to your Claude workspace"
+    : isRunning && statusMessage ? statusMessage
+    : hover === "deploy" ? "→ deploy to Claude"
+    : hover === "zip" ? `→ ${skill.slug}.zip`
+    : `updated ${formatRelative(skill.updated_at)}`;
 
-  // Poll Browser Use session status
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const poll = async () => {
-      try {
-        const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
-        const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
-        const res = await fetch(`${sbBase}/functions/v1/browser-use-deploy`, {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: anonKey },
-          body: JSON.stringify({ action: "check-status", session_id: sessionId }),
-        });
-        const data = await res.json();
-        if (data.status === "completed" || data.status === "done" || data.status === "finished") {
-          setDeployStatus("completed");
-          setLiveUrl(null);
-          setDeploying(false);
-          if (pollRef.current) clearInterval(pollRef.current);
-        } else if (data.status === "failed" || data.status === "error") {
-          setDeployStatus("failed");
-          setError("Deploy failed — check the browser session for details.");
-          setLiveUrl(null);
-          setDeploying(false);
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch { /* ignore poll errors */ }
-    };
-
-    pollRef.current = setInterval(poll, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [sessionId]);
-
-  // Auto-clear success
-  useEffect(() => {
-    if (deployStatus === "completed") {
-      const t = setTimeout(() => { setDeployStatus(null); setSessionId(null); }, 8000);
-      return () => clearTimeout(t);
-    }
-  }, [deployStatus]);
-
-  // ── Deploy via Browser Use ──────────────────────────────────
+  // ── Deploy via Browserbase + Playwright ──────────────────────
   const handleDeploy = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (deploying) return;
@@ -91,43 +63,147 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
     }
 
     setDeploying(true);
+    setDeployStatus(null);
     setError(null);
-    setDeployStatus("starting");
+    setLiveUrl(null);
+    setStatusMessage("Preparing…");
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
     try {
+      // Step 1: Generate the zip URL via our edge function
       const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
       const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? anonKey;
 
-      const res = await fetch(`${sbBase}/functions/v1/browser-use-deploy`, {
-        method: "POST",
-        headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
-        body: JSON.stringify({ skill_slug: skill.slug }),
-      });
+      // Look up skill info for the zip
+      const { data: skillData } = await supabase
+        .from("skills")
+        .select("github_repo, skill_folder_path, skill_path_in_repo")
+        .eq("slug", skill.slug)
+        .eq("is_canonical", true)
+        .maybeSingle();
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Failed to start deploy");
+      if (!skillData?.github_repo) {
+        setError("Skill has no download source");
         setDeploying(false);
-        setDeployStatus(null);
         return;
       }
 
-      setSessionId(data.session_id);
-      setLiveUrl(data.live_url);
-      setDeployStatus("running");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Deploy failed");
-      setDeploying(false);
-      setDeployStatus(null);
-    }
-  }, [user, skill.slug, deploying]);
+      setStatusMessage("Building skill zip…");
 
-  const handleCloseLive = useCallback(() => {
-    setLiveUrl(null);
-    // Don't cancel the session — it continues in the background
-  }, []);
+      // Build zip and upload to storage
+      const zipRes = await fetch(`${sbBase}/functions/v1/zip-skill-folder`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          repo: skillData.github_repo,
+          skill_folder_path: skillData.skill_folder_path ?? skillData.skill_path_in_repo,
+          filename: skill.slug,
+        }),
+      });
+
+      if (!zipRes.ok) {
+        const t = await zipRes.text();
+        throw new Error(`Zip failed: ${t.slice(0, 100)}`);
+      }
+
+      const zipBlob = await zipRes.blob();
+
+      // Upload to Supabase Storage for a public URL
+      const storagePath = `deploy/${skill.slug}-${Date.now()}.zip`;
+      const { error: uploadErr } = await supabase.storage
+        .from("skill-zips")
+        .upload(storagePath, zipBlob, { contentType: "application/zip", upsert: true });
+
+      if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
+
+      const { data: urlData } = supabase.storage.from("skill-zips").getPublicUrl(storagePath);
+      const skillZipUrl = urlData.publicUrl;
+
+      setStatusMessage("Starting browser…");
+
+      // Step 2: Call the Vercel API route for deterministic Playwright automation
+      const res = await fetch("/api/deploy-to-claude", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          skill_slug: skill.slug,
+          skill_name: skill.name,
+          skill_zip_url: skillZipUrl,
+        }),
+        signal: ctrl.signal,
+      });
+
+      if (!res.ok && !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Deploy failed (${res.status})`);
+      }
+
+      if (!res.body) throw new Error("No response body");
+
+      // Stream SSE events
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const events = buf.split("\n\n");
+        buf = events.pop() ?? "";
+
+        for (const ev of events) {
+          const line = ev.split("\n").find(l => l.startsWith("data: "));
+          if (!line) continue;
+          try {
+            const payload = JSON.parse(line.slice(6)) as TraceEvent;
+
+            if (payload.type === "status") {
+              setStatusMessage(payload.message ?? null);
+            }
+            if (payload.type === "sandbox_ready" && payload.live_url) {
+              setLiveUrl(payload.live_url as string);
+            }
+            if (payload.type === "error") {
+              if (payload.needs_login && payload.live_url) {
+                setLiveUrl(payload.live_url as string);
+                setStatusMessage("Log in to Claude in the browser window, then retry");
+                setDeployStatus("needs_login");
+                setDeploying(false);
+              } else {
+                setError(payload.message ?? "Deploy failed");
+                setDeployStatus("error");
+                setDeploying(false);
+              }
+            }
+            if (payload.type === "complete") {
+              setDeployStatus("complete");
+              setStatusMessage(payload.summary ?? "Deployed");
+              setDeploying(false);
+              setLiveUrl(null);
+              setTimeout(() => { setDeployStatus(null); setStatusMessage(null); }, 8000);
+            }
+          } catch { /**/ }
+        }
+      }
+
+      if (!deployStatus) {
+        setDeployStatus("complete");
+        setDeploying(false);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Deploy failed";
+      if (!msg.toLowerCase().includes("abort")) {
+        setError(msg);
+        setDeployStatus("error");
+      }
+      setDeploying(false);
+    } finally {
+      abortRef.current = null;
+    }
+  }, [user, skill.slug, skill.name, deploying, deployStatus]);
 
   // ── Download ────────────────────────────────────────────────
   const handleZip = useCallback(async (e: React.MouseEvent) => {
@@ -151,9 +227,6 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
   const onCardKey = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCard(); }
   }, [openCard]);
-
-  const isSuccess = deployStatus === "completed";
-  const isRunning = deploying && !isSuccess;
 
   return (
     <>
@@ -197,10 +270,10 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
 
         <div style={{ flex: 1 }} />
 
-        {/* Preview line */}
+        {/* Status line */}
         <div style={{
-          height: 16, fontFamily: M, fontSize: 11, marginTop: 14,
-          color: isSuccess ? "#4ade80" : error ? "#fca5a5" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
+          minHeight: 16, fontFamily: M, fontSize: 11, marginTop: 14,
+          color: isSuccess ? "#4ade80" : isFailed || error ? "#fca5a5" : isRunning ? "#22d3ee" : hover ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.25)",
           transition: "color 150ms", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
           {error ?? previewLine}
@@ -213,13 +286,13 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
             disabled={isRunning}
             style={{
               flex: 1, padding: "10px 14px",
-              background: isSuccess ? "rgba(74,222,128,0.12)" : isRunning ? "rgba(255,255,255,0.10)" : "#fff",
-              color: isSuccess ? "#4ade80" : isRunning ? "rgba(255,255,255,0.50)" : "#000",
-              border: isSuccess ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(255,255,255,0.10)",
+              background: isSuccess ? "rgba(74,222,128,0.12)" : isRunning ? "rgba(34,211,238,0.10)" : "#fff",
+              color: isSuccess ? "#4ade80" : isRunning ? "#22d3ee" : "#000",
+              border: isSuccess ? "1px solid rgba(74,222,128,0.25)" : isRunning ? "1px solid rgba(34,211,238,0.20)" : "1px solid rgba(255,255,255,0.10)",
               borderRadius: 6, fontFamily: M, fontSize: 12, fontWeight: 600, letterSpacing: "0.04em",
               cursor: isRunning ? "wait" : "pointer", transition: "all 150ms",
             }}>
-            {isSuccess ? "✓ Deployed" : isRunning ? "Deploying…" : "Deploy to Claude"}
+            {isSuccess ? "✓ Deployed" : isRunning ? "Deploying…" : isFailed ? "Retry" : "Deploy to Claude"}
           </button>
           <button type="button" onClick={handleZip}
             onMouseEnter={() => setHover("zip")} onMouseLeave={() => setHover(null)}
@@ -236,15 +309,14 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
         </div>
       </div>
 
-      {/* ── Live Browser Modal ── */}
+      {/* ── Live Browserbase Session Modal ── */}
       {liveUrl && (
         <div
-          onClick={handleCloseLive}
+          onClick={() => setLiveUrl(null)}
           style={{
             position: "fixed", inset: 0, zIndex: 9999,
             background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            padding: 24,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24,
           }}
         >
           <div
@@ -253,37 +325,30 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
               width: "min(1100px, 95vw)", height: "min(750px, 85vh)",
               background: "#111", borderRadius: 12, overflow: "hidden",
               display: "flex", flexDirection: "column",
-              border: "1px solid rgba(255,255,255,0.10)",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+              border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
             }}
           >
-            {/* Header */}
             <div style={{
               flexShrink: 0, padding: "12px 20px",
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(0,0,0,0.4)",
+              borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.4)",
             }}>
               <div>
                 <div style={{ fontFamily: M, fontSize: 11, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
-                  DEPLOYING · {skill.name}
+                  {deployStatus === "needs_login" ? "LOG IN TO CLAUDE" : `DEPLOYING · ${skill.name}`}
                 </div>
                 <div style={{ fontFamily: F, fontStyle: "italic", fontSize: 13, color: "rgba(255,255,255,0.55)", marginTop: 3 }}>
-                  Log in to Claude below if needed — the agent will handle the upload automatically.
+                  {deployStatus === "needs_login"
+                    ? "Log in below, then close this window and click Deploy again."
+                    : "The automation is running — you can watch it here."}
                 </div>
               </div>
-              <button type="button" onClick={handleCloseLive}
+              <button type="button" onClick={() => setLiveUrl(null)}
                 style={{ padding: "6px 14px", background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, fontFamily: M, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                 Close
               </button>
             </div>
-            {/* Live browser iframe */}
-            <iframe
-              src={liveUrl}
-              style={{ flex: 1, border: "none", width: "100%", background: "#000" }}
-              title="Browser Use live session"
-              allow="clipboard-write"
-            />
+            <iframe src={liveUrl} style={{ flex: 1, border: "none", width: "100%", background: "#000" }} title="Browserbase session" allow="clipboard-write" />
           </div>
         </div>
       )}
