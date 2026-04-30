@@ -91,8 +91,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     sessionId = session.id;
 
-    // Get the live debug URL for the user to see/interact
-    const liveUrl = `https://www.browserbase.com/sessions/${session.id}/debug`;
+    // Get the embeddable live view URL (publicly accessible, no BB login needed)
+    const debugInfo = await bb.sessions.debug(session.id);
+    const liveUrl = debugInfo.debuggerFullscreenUrl;
 
     send(res, {
       type: "sandbox_ready",
