@@ -76,6 +76,8 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token ?? anonKey;
 
+    let streamEnded = false;
+
     try {
       setStatusMessage("Starting deploy…");
 
@@ -124,6 +126,7 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
               setLiveUrl(payload.live_url as string);
             }
             if (payload.type === "error") {
+              streamEnded = true;
               if (payload.needs_login && payload.live_url) {
                 setLiveUrl(payload.live_url as string);
                 setStatusMessage("Log in to Claude in the browser window, then retry");
@@ -136,6 +139,7 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
               }
             }
             if (payload.type === "complete") {
+              streamEnded = true;
               setDeployStatus("complete");
               setStatusMessage(payload.summary ?? "Deployed");
               setDeploying(false);
@@ -146,8 +150,8 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
         }
       }
 
-      if (!deployStatus) {
-        setDeployStatus("complete");
+      // Only mark complete if the stream didn't set a terminal status
+      if (!streamEnded) {
         setDeploying(false);
       }
     } catch (err) {
