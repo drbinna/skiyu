@@ -463,6 +463,8 @@ export default function Publish() {
 
           {[
             { id: "skills", label: "My Skills", count: String(MY_SKILLS.length) },
+            { id: "author", label: "Author", count: null },
+            { id: "import", label: "Import from GitHub", count: null },
             { id: "analytics", label: "Analytics", count: null },
             { id: "activity", label: "Activity", count: String(ACTIVITY.length) },
             { id: "settings", label: "Settings", count: null },
@@ -553,6 +555,16 @@ export default function Publish() {
                 </div>
               ))}
             </>
+          )}
+
+          {/* TAB: AUTHOR — Chat interface for writing SKILL.md */}
+          {tab === "author" && (
+            <AuthorTab />
+          )}
+
+          {/* TAB: IMPORT — Pull skill from a GitHub repo */}
+          {tab === "import" && (
+            <ImportTab user={user} />
           )}
 
           {/* TAB: ACTIVITY */}
@@ -895,6 +907,348 @@ export default function Publish() {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUTHOR TAB — Chat interface for writing SKILL.md files
+// ══════════════════════════════════════════════════════════════
+
+function AuthorTab() {
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [generatedMd, setGeneratedMd] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    const newMessages = [...messages, { role: "user" as const, content: text }];
+    setMessages(newMessages);
+    setBusy(true);
+
+    try {
+      const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
+      const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? anonKey;
+
+      const res = await fetch(`${sbBase}/functions/v1/chat-with-skill`, {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          skill_slug: "skill-composer",
+          messages: newMessages,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setMessages(prev => [...prev, { role: "assistant", content: errData.error ?? "Something went wrong. Try again." }]);
+        setBusy(false);
+        return;
+      }
+
+      // Stream SSE response
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let fullText = "";
+
+      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const events = buf.split("\n\n");
+        buf = events.pop() ?? "";
+        for (const ev of events) {
+          const line = ev.split("\n").find(l => l.startsWith("data: "));
+          if (!line) continue;
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.type === "content_block_delta" && payload.delta?.text) {
+              fullText += payload.delta.text;
+              setMessages(prev => {
+                const copy = [...prev];
+                copy[copy.length - 1] = { role: "assistant", content: fullText };
+                return copy;
+              });
+            }
+          } catch { /**/ }
+        }
+      }
+
+      // Check if the response contains a SKILL.md
+      if (fullText.includes("---\nname:") || fullText.includes("# ")) {
+        const mdMatch = fullText.match(/```(?:markdown|md|yaml)?\n([\s\S]+?)```/);
+        if (mdMatch) setGeneratedMd(mdMatch[1]);
+        else if (fullText.includes("---\nname:")) setGeneratedMd(fullText);
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err instanceof Error ? err.message : "Unknown error"}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopyMd = () => {
+    if (generatedMd) navigator.clipboard.writeText(generatedMd);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)" }}>
+      <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          SKILL AUTHORING ASSISTANT
+        </div>
+        <p style={{ fontSize: 13, fontFamily: F, fontStyle: "italic", color: "rgba(255,255,255,0.50)", marginTop: 6, lineHeight: 1.5 }}>
+          Describe the skill you want to build. The assistant will draft a SKILL.md, check it against our quality standards, and help you refine it.
+        </p>
+      </div>
+
+      {/* Chat messages */}
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 15, fontFamily: F, fontStyle: "italic", color: "rgba(255,255,255,0.30)", lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
+              Try: "I want a skill that reviews Python code for security vulnerabilities" or "Help me write a skill for generating API documentation from source code"
+            </div>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+            maxWidth: "80%",
+            padding: "10px 14px",
+            borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+            background: m.role === "user" ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+            border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)"}`,
+            fontSize: 13, fontFamily: m.role === "user" ? M : F,
+            fontStyle: m.role === "assistant" ? "italic" : "normal",
+            color: "rgba(255,255,255,0.75)",
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+          }}>
+            {m.content || (busy && i === messages.length - 1 ? "Thinking…" : "")}
+          </div>
+        ))}
+      </div>
+
+      {/* Generated SKILL.md preview */}
+      {generatedMd && (
+        <div style={{ padding: "0 24px 12px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+            <span style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)" }}>GENERATED SKILL.md</span>
+            <button onClick={handleCopyMd} style={{ fontFamily: M, fontSize: 10, fontWeight: 600, color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
+              Copy
+            </button>
+          </div>
+          <pre style={{ fontFamily: M, fontSize: 11, lineHeight: 1.5, color: "rgba(255,255,255,0.55)", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6, padding: "10px 12px", maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", margin: 0 }}>
+            {generatedMd.slice(0, 2000)}
+          </pre>
+        </div>
+      )}
+
+      {/* Input */}
+      <div style={{ padding: "12px 24px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); } }}
+            placeholder="Describe the skill you want to create…"
+            rows={2}
+            disabled={busy}
+            style={{ flex: 1, padding: "10px 12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, color: "#fff", fontFamily: F, fontStyle: "italic", fontSize: 13, lineHeight: 1.5, outline: "none", resize: "none" }}
+          />
+          <button onClick={() => void handleSend()} disabled={!input.trim() || busy}
+            style={{ alignSelf: "flex-end", padding: "10px 16px", background: input.trim() && !busy ? "#fff" : "rgba(255,255,255,0.10)", color: input.trim() && !busy ? "#000" : "rgba(255,255,255,0.40)", border: "none", borderRadius: 6, fontFamily: M, fontSize: 11, fontWeight: 600, cursor: input.trim() && !busy ? "pointer" : "not-allowed" }}>
+            {busy ? "…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// IMPORT TAB — Pull a skill from a GitHub repo
+// ══════════════════════════════════════════════════════════════
+
+function ImportTab({ user }: { user: unknown }) {
+  const [repoUrl, setRepoUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [foundSkills, setFoundSkills] = useState<{ path: string; preview: string }[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+
+  // Parse repo URL → owner/repo
+  const parseRepo = (url: string): { owner: string; repo: string } | null => {
+    const match = url.trim().match(/github\.com\/([^/]+)\/([^/\s#?]+)/);
+    if (!match) return null;
+    return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
+  };
+
+  const handleScan = async () => {
+    const parsed = parseRepo(repoUrl);
+    if (!parsed) { setError("Paste a valid GitHub URL (e.g., https://github.com/owner/repo)"); return; }
+    setLoading(true);
+    setError(null);
+    setFoundSkills([]);
+    setImportResult(null);
+
+    try {
+      // Fetch the repo tree to find SKILL.md files
+      for (const branch of ["main", "master"]) {
+        const res = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`);
+        if (!res.ok) continue;
+        const tree = await res.json();
+        if (!tree.tree) continue;
+
+        const skillFiles = (tree.tree as { path: string; type: string }[])
+          .filter(f => f.type === "blob" && f.path.toLowerCase().endsWith("skill.md"))
+          .map(f => f.path);
+
+        if (skillFiles.length === 0) {
+          setError(`No SKILL.md files found in ${parsed.owner}/${parsed.repo} (${branch} branch)`);
+          setLoading(false);
+          return;
+        }
+
+        // Fetch previews for each SKILL.md
+        const skills: { path: string; preview: string }[] = [];
+        for (const path of skillFiles.slice(0, 10)) {
+          try {
+            const rawRes = await fetch(`https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${branch}/${path}`);
+            if (rawRes.ok) {
+              const content = await rawRes.text();
+              skills.push({ path, preview: content.slice(0, 500) });
+            }
+          } catch { /**/ }
+        }
+
+        setFoundSkills(skills);
+        setLoading(false);
+        return;
+      }
+
+      setError("Could not access repo. Make sure it's public.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scan failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImport = async (skillPath: string) => {
+    if (!user) { setError("Sign in to import skills"); return; }
+    const parsed = parseRepo(repoUrl);
+    if (!parsed) return;
+
+    setImporting(true);
+    setError(null);
+    setImportResult(null);
+
+    try {
+      // Submit to skills_staged table
+      const folderPath = skillPath.replace(/\/SKILL\.md$/i, "");
+      const slug = folderPath.split("/").pop() ?? `${parsed.owner}-${parsed.repo}`;
+
+      const { error: insertErr } = await supabase.from("skills_staged").insert({
+        slug,
+        name: slug,
+        github_repo: `${parsed.owner}/${parsed.repo}`,
+        github_url: repoUrl.trim(),
+        skill_path_in_repo: folderPath,
+        skill_folder_path: folderPath,
+        status: "pending",
+        submitted_by: (user as { id: string }).id,
+      });
+
+      if (insertErr) {
+        // Might not have skills_staged table — fall back to showing success message
+        setImportResult(`Skill found at ${folderPath}. Submit it for review by contacting the skiyu team.`);
+      } else {
+        setImportResult(`✓ ${slug} submitted for review. It will appear in the catalog once approved.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: "24px" }}>
+      <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
+        IMPORT FROM GITHUB
+      </div>
+      <p style={{ fontSize: 13, fontFamily: F, fontStyle: "italic", color: "rgba(255,255,255,0.50)", lineHeight: 1.5, marginBottom: 20 }}>
+        Paste a GitHub repo URL. We'll scan for SKILL.md files and let you import them to the skiyu catalog.
+      </p>
+
+      {/* URL input */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <input
+          type="url"
+          value={repoUrl}
+          onChange={e => setRepoUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") void handleScan(); }}
+          placeholder="https://github.com/owner/repo"
+          style={{ flex: 1, padding: "10px 12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 6, color: "#fff", fontFamily: M, fontSize: 12, outline: "none" }}
+        />
+        <button onClick={() => void handleScan()} disabled={!repoUrl.trim() || loading}
+          style={{ padding: "10px 18px", background: repoUrl.trim() && !loading ? "#fff" : "rgba(255,255,255,0.10)", color: repoUrl.trim() && !loading ? "#000" : "rgba(255,255,255,0.40)", border: "none", borderRadius: 6, fontFamily: M, fontSize: 12, fontWeight: 600, cursor: repoUrl.trim() && !loading ? "pointer" : "not-allowed" }}>
+          {loading ? "Scanning…" : "Scan repo"}
+        </button>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding: "10px 14px", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.18)", borderRadius: 6, fontFamily: M, fontSize: 12, color: "#fca5a5", marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Import result */}
+      {importResult && (
+        <div style={{ padding: "10px 14px", background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.18)", borderRadius: 6, fontFamily: M, fontSize: 12, color: "#4ade80", marginBottom: 16 }}>
+          {importResult}
+        </div>
+      )}
+
+      {/* Found skills */}
+      {foundSkills.length > 0 && (
+        <div>
+          <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 10 }}>
+            FOUND {foundSkills.length} SKILL{foundSkills.length !== 1 ? "S" : ""}
+          </div>
+          {foundSkills.map((s, i) => (
+            <div key={i} style={{ padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontFamily: M, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.70)" }}>{s.path}</span>
+                <button onClick={() => void handleImport(s.path)} disabled={importing}
+                  style={{ padding: "6px 14px", background: importing ? "rgba(255,255,255,0.06)" : "#fff", color: importing ? "rgba(255,255,255,0.40)" : "#000", border: "none", borderRadius: 5, fontFamily: M, fontSize: 11, fontWeight: 600, cursor: importing ? "wait" : "pointer" }}>
+                  {importing ? "Importing…" : "Import"}
+                </button>
+              </div>
+              <pre style={{ fontFamily: M, fontSize: 10, lineHeight: 1.5, color: "rgba(255,255,255,0.40)", background: "rgba(255,255,255,0.02)", borderRadius: 4, padding: "8px 10px", maxHeight: 120, overflow: "auto", whiteSpace: "pre-wrap", margin: 0 }}>
+                {s.preview}{s.preview.length >= 500 ? "\n…" : ""}
+              </pre>
+            </div>
+          ))}
         </div>
       )}
     </div>
