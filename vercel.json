@@ -1,17 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/deploy-to-claude.ts": {
-      "maxDuration": 60
-    }
-  },
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
-    },
-    {
-      "source": "/((?!api/|assets/|favicon\\.|.*\\.(?:js|css|map|svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|json|xml|txt)).*)",
+      "source": "/((?!assets/|favicon\\.|.*\\.(?:js|css|map|svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|json|xml|txt)).*)",
       "destination": "/index.html"
     }
   ]

@@ -71,67 +71,24 @@ export default function SkillCard({ skill, onOpen, preferModal = false, userId }
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
+    const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
+    const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token ?? anonKey;
+
     try {
-      // Step 1: Generate the zip URL via our edge function
-      const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
-      const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
+      setStatusMessage("Starting deploy…");
 
-      // Look up skill info for the zip
-      const { data: skillData } = await supabase
-        .from("skills")
-        .select("github_repo, skill_folder_path, skill_path_in_repo")
-        .eq("slug", skill.slug)
-        .eq("is_canonical", true)
-        .maybeSingle();
-
-      if (!skillData?.github_repo) {
-        setError("Skill has no download source");
-        setDeploying(false);
-        return;
-      }
-
-      setStatusMessage("Building skill zip…");
-
-      // Build zip and upload to storage
-      const zipRes = await fetch(`${sbBase}/functions/v1/zip-skill-folder`, {
+      // The edge function handles everything:
+      // zip building → storage upload → Browserbase session → CDP automation
+      const res = await fetch(`${sbBase}/functions/v1/deploy-skill-browserbase`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          repo: skillData.github_repo,
-          skill_folder_path: skillData.skill_folder_path ?? skillData.skill_path_in_repo,
-          filename: skill.slug,
-        }),
-      });
-
-      if (!zipRes.ok) {
-        const t = await zipRes.text();
-        throw new Error(`Zip failed: ${t.slice(0, 100)}`);
-      }
-
-      const zipBlob = await zipRes.blob();
-
-      // Upload to Supabase Storage for a public URL
-      const storagePath = `deploy/${skill.slug}-${Date.now()}.zip`;
-      const { error: uploadErr } = await supabase.storage
-        .from("skill-zips")
-        .upload(storagePath, zipBlob, { contentType: "application/zip", upsert: true });
-
-      if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
-
-      const { data: urlData } = supabase.storage.from("skill-zips").getPublicUrl(storagePath);
-      const skillZipUrl = urlData.publicUrl;
-
-      setStatusMessage("Starting browser…");
-
-      // Step 2: Call the Vercel API route for deterministic Playwright automation
-      const res = await fetch("/api/deploy-to-claude", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          skill_slug: skill.slug,
-          skill_name: skill.name,
-          skill_zip_url: skillZipUrl,
-        }),
+        headers: {
+          "content-type": "application/json",
+          apikey: anonKey,
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ skill_slug: skill.slug }),
         signal: ctrl.signal,
       });
 
