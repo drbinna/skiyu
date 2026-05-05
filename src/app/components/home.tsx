@@ -52,6 +52,16 @@ const CATEGORIES = [
 
 interface Msg { role: "user" | "assistant"; content: string; skills?: SkillCatalogItem[]; }
 
+// Parse [OPTION] tags from assistant messages
+function parseOptions(text: string): { clean: string; options: string[] } {
+  const options: string[] = [];
+  const clean = text.replace(/\[OPTION\]\s*(.+)/gi, (_, opt) => {
+    options.push(opt.trim());
+    return "";
+  }).replace(/\n{3,}/g, "\n\n").trim();
+  return { clean, options };
+}
+
 // ══════════════════════════════════════════════════════════════
 
 export default function Home() {
@@ -66,6 +76,7 @@ export default function Home() {
   const [selected, setSelected] = useState<SkillCatalogItem | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [options, setOptions] = useState<string[]>([]);
 
   const taRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -92,7 +103,7 @@ export default function Home() {
   // ── Send ────────────────────────────────────────────────────
   const send = useCallback(async () => {
     const text = input.trim(); if (!text || busy) return;
-    setInput(""); setBusy(true);
+    setInput(""); setBusy(true); setOptions([]);
     if (taRef.current) taRef.current.style.height = "52px";
     const next: Msg[] = [...msgs, { role: "user", content: text }];
     setMsgs(next);
@@ -125,11 +136,58 @@ export default function Home() {
           try { const p = JSON.parse(ln.slice(6)); if (p.type === "content_block_delta" && p.delta?.text) { full += p.delta.text; setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: full }; return c; }); } } catch { /**/ }
         }
       }
+      // After stream: parse [OPTION] tags → extract options, clean the message
+      const { clean, options: parsed } = parseOptions(full);
+      if (parsed.length > 0) {
+        setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: clean }; return c; });
+        setOptions(parsed);
+      }
     } catch { setMsgs(p => [...p, { role: "assistant", content: "Connection error." }]); }
     finally { setBusy(false); }
   }, [input, msgs, busy, doSearch]);
 
   const chip = (prompt: string) => { setInput(prompt); setTimeout(() => taRef.current?.focus(), 80); };
+
+  // When user clicks an option card, send it as their next message
+  const pickOption = useCallback((opt: string) => {
+    setOptions([]);
+    setInput(opt);
+    // Auto-send after a brief delay so the user sees what was selected
+    setTimeout(() => {
+      setInput("");
+      setBusy(true);
+      const next: Msg[] = [...msgs, { role: "user", content: opt }];
+      setMsgs(next);
+      // Trigger the send logic manually
+      (async () => {
+        try {
+          const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
+          const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
+          const { data: sess } = await supabase.auth.getSession();
+          const token = sess.session?.access_token ?? anonKey;
+          const res = await fetch(`${sbBase}/functions/v1/chat-with-skill`, {
+            method: "POST", headers: { "content-type": "application/json", apikey: anonKey, authorization: `Bearer ${token}` },
+            body: JSON.stringify({ skill_slug: "skill-composer", messages: next.slice(-10) }),
+          });
+          if (!res.ok) { const e = await res.json().catch(() => ({})); setMsgs(p => [...p, { role: "assistant", content: e.error ?? "Something went wrong." }]); setBusy(false); return; }
+          const reader = res.body!.getReader(); const dec = new TextDecoder();
+          let buf = "", full = ""; setMsgs(p => [...p, { role: "assistant", content: "" }]);
+          while (true) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const evts = buf.split("\n\n"); buf = evts.pop() ?? "";
+            for (const ev of evts) {
+              const ln = ev.split("\n").find(l => l.startsWith("data: ")); if (!ln) continue;
+              try { const p = JSON.parse(ln.slice(6)); if (p.type === "content_block_delta" && p.delta?.text) { full += p.delta.text; setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: full }; return c; }); } } catch { /**/ }
+            }
+          }
+          const { clean, options: parsed } = parseOptions(full);
+          if (parsed.length > 0) { setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: clean }; return c; }); setOptions(parsed); }
+        } catch { setMsgs(p => [...p, { role: "assistant", content: "Connection error." }]); }
+        finally { setBusy(false); }
+      })();
+    }, 100);
+  }, [msgs]);
 
   const handleDownload = useCallback(async () => {
     if (!selected || downloading) return;
@@ -310,8 +368,8 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Action chips — only when no messages */}
-              {!hasMessages && (
+              {/* Action chips — only when no messages and no options */}
+              {!hasMessages && options.length === 0 && (
                 <div style={{ display: "flex", flexWrap: mobile ? "nowrap" : "wrap", gap: 8, justifyContent: "center", marginTop: 12, overflowX: mobile ? "auto" : "visible", scrollbarWidth: "none" }}>
                   {[
                     { icon: "🔍", label: "Find a skill", prompt: "Help me find a skill for " },
@@ -324,6 +382,28 @@ export default function Home() {
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.18)"; (e.currentTarget as HTMLElement).style.color = "#fff"; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.40)"; }}>
                       <span style={{ fontSize: 12 }}>{c.icon}</span>{c.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Option cards — shown when assistant asks user to choose */}
+              {options.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                  {options.map((opt, i) => (
+                    <button key={i} type="button" onClick={() => pickOption(opt)}
+                      style={{
+                        flex: mobile ? "1 1 100%" : "1 1 calc(50% - 4px)",
+                        textAlign: "left", padding: "10px 14px", borderRadius: 10,
+                        background: "rgba(255,255,255,0.025)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        color: "rgba(255,255,255,0.70)",
+                        fontFamily: F, fontSize: 13, lineHeight: 1.5,
+                        cursor: "pointer", transition: "all 150ms",
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#22d3ee"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLElement).style.color = "#fff"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.025)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.70)"; }}>
+                      {opt}
                     </button>
                   ))}
                 </div>
