@@ -10,14 +10,30 @@ import Home from "./components/home";
 // Each route's dynamic import is factored into a named function so nav
 // links can call it on mouseenter/focus to preload the chunk before the
 // user actually clicks. Vite dedupes identical dynamic imports.
+//
+// lazyRetry handles stale chunks after a new deploy — if the old
+// chunk filename is gone, reload the page once to get the new HTML.
 
-const importExplore = () => import("./components/explore");
-const importPublish = () => import("./components/publish");
-const importDocs = () => import("./components/docs");
-const importAdminStaged = () => import("./components/admin-staged");
-const importSkillDetail = () => import("./components/skill-detail");
-const importAuthor = () => import("./components/author");
-const importRun = () => import("./components/run");
+function lazyRetry<T>(importFn: () => Promise<T>): () => Promise<T> {
+  return () =>
+    importFn().catch((err: Error) => {
+      // Only retry once per session to avoid infinite reload loops
+      const retried = sessionStorage.getItem("skiyu-chunk-retry");
+      if (!retried) {
+        sessionStorage.setItem("skiyu-chunk-retry", "1");
+        window.location.reload();
+      }
+      throw err;
+    });
+}
+
+const importExplore = lazyRetry(() => import("./components/explore"));
+const importPublish = lazyRetry(() => import("./components/publish"));
+const importDocs = lazyRetry(() => import("./components/docs"));
+const importAdminStaged = lazyRetry(() => import("./components/admin-staged"));
+const importSkillDetail = lazyRetry(() => import("./components/skill-detail"));
+const importAuthor = lazyRetry(() => import("./components/author"));
+const importRun = lazyRetry(() => import("./components/run"));
 
 export const preloadRoute = {
   "/explore": importExplore,
