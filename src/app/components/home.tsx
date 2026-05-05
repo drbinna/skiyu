@@ -62,6 +62,35 @@ function parseOptions(text: string): { clean: string; options: string[] } {
   return { clean, options };
 }
 
+// Parse [SKILL_START]...[SKILL_END] — extract generated SKILL.md
+function parseSkill(text: string): { clean: string; skillMd: string | null; skillName: string | null } {
+  const match = text.match(/\[SKILL_START\]\s*([\s\S]*?)\s*\[SKILL_END\]/);
+  if (!match) return { clean: text, skillMd: null, skillName: null };
+  const skillMd = match[1].trim();
+  // Extract name from frontmatter
+  const nameMatch = skillMd.match(/^---[\s\S]*?name:\s*(.+?)[\s\n]/m);
+  const skillName = nameMatch ? nameMatch[1].trim().replace(/['"]/g, "") : null;
+  // Remove the skill block from displayed text
+  const clean = text.replace(/\[SKILL_START\][\s\S]*?\[SKILL_END\]/, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { clean, skillMd, skillName };
+}
+
+// Create a downloadable zip from a SKILL.md string
+async function downloadSkillMd(skillMd: string, name: string) {
+  // Import JSZip dynamically
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const folder = zip.folder(name)!;
+  folder.file("SKILL.md", skillMd);
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ══════════════════════════════════════════════════════════════
 
 export default function Home() {
@@ -77,6 +106,7 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
+  const [generatedSkill, setGeneratedSkill] = useState<{ md: string; name: string } | null>(null);
 
   const taRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -136,11 +166,21 @@ export default function Home() {
           try { const p = JSON.parse(ln.slice(6)); if (p.type === "content_block_delta" && p.delta?.text) { full += p.delta.text; setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: full }; return c; }); } } catch { /**/ }
         }
       }
-      // After stream: parse [OPTION] tags → extract options, clean the message
-      const { clean, options: parsed } = parseOptions(full);
-      if (parsed.length > 0) {
-        setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: clean }; return c; });
-        setOptions(parsed);
+      // After stream: parse [SKILL_START]/[SKILL_END] and [OPTION] tags
+      let processed = full;
+
+      // Check for generated skill first
+      const { clean: afterSkill, skillMd, skillName } = parseSkill(processed);
+      if (skillMd && skillName) {
+        processed = afterSkill;
+        setGeneratedSkill({ md: skillMd, name: skillName });
+      }
+
+      // Then check for options
+      const { clean: afterOpts, options: parsed } = parseOptions(processed);
+      if (parsed.length > 0 || processed !== full) {
+        setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: parsed.length > 0 ? afterOpts : processed }; return c; });
+        if (parsed.length > 0) setOptions(parsed);
       }
     } catch { setMsgs(p => [...p, { role: "assistant", content: "Connection error." }]); }
     finally { setBusy(false); }
@@ -181,8 +221,11 @@ export default function Home() {
               try { const p = JSON.parse(ln.slice(6)); if (p.type === "content_block_delta" && p.delta?.text) { full += p.delta.text; setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: full }; return c; }); } } catch { /**/ }
             }
           }
-          const { clean, options: parsed } = parseOptions(full);
-          if (parsed.length > 0) { setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: clean }; return c; }); setOptions(parsed); }
+          const { clean: aS, skillMd: sMd, skillName: sN } = parseSkill(full);
+          let txt = aS ?? full;
+          if (sMd && sN) setGeneratedSkill({ md: sMd, name: sN });
+          const { clean: aO, options: parsed } = parseOptions(txt);
+          if (parsed.length > 0 || txt !== full) { setMsgs(prev => { const c = [...prev]; c[c.length - 1] = { role: "assistant", content: parsed.length > 0 ? aO : txt }; return c; }); if (parsed.length > 0) setOptions(parsed); }
         } catch { setMsgs(p => [...p, { role: "assistant", content: "Connection error." }]); }
         finally { setBusy(false); }
       })();
@@ -406,6 +449,37 @@ export default function Home() {
                       {opt}
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Generated skill actions — shown when skiyu has built a skill */}
+              {generatedSkill && (
+                <div style={{ marginTop: 12, padding: "14px 16px", background: "rgba(34,211,238,0.04)", border: "1px solid rgba(34,211,238,0.15)", borderRadius: 12 }}>
+                  <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "#22d3ee", marginBottom: 8 }}>
+                    SKILL READY · {generatedSkill.name}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button"
+                      onClick={() => { void downloadSkillMd(generatedSkill.md, generatedSkill.name); }}
+                      style={{ flex: 1, minWidth: mobile ? "100%" : 140, padding: "10px 14px", background: "#fff", color: "#000", border: "none", borderRadius: 8, fontFamily: M, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      ↓ Download .zip
+                    </button>
+                    <button type="button"
+                      onClick={() => navigate("/publish")}
+                      style={{ flex: 1, minWidth: mobile ? "100%" : 140, padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, fontFamily: M, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      Publish to marketplace
+                    </button>
+                    <button type="button"
+                      onClick={() => chip("Test the skill I just built with a sample input")}
+                      style={{ flex: 1, minWidth: mobile ? "100%" : 140, padding: "10px 14px", background: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, fontFamily: M, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      Test skill
+                    </button>
+                  </div>
+                  <button type="button"
+                    onClick={() => chip("I want to make changes to the skill")}
+                    style={{ marginTop: 8, width: "100%", padding: "8px", background: "transparent", color: "rgba(255,255,255,0.40)", border: "1px dashed rgba(255,255,255,0.10)", borderRadius: 6, fontFamily: M, fontSize: 11, cursor: "pointer" }}>
+                    Make changes
+                  </button>
                 </div>
               )}
             </div>
