@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { uploadSkillPackage, formatFileSize } from "@/lib/hooks";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 import { preloadRoute } from "../routes";
 
 // ── Description validators (spec §1 + §2) ──────────────────
@@ -184,6 +185,7 @@ export default function Publish() {
   const [uploadDescription, setUploadDescription] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const mobile = useIsMobile();
 
   const { user, profile, loading: authLoading, signInWithGitHub, claimableSkills, claimedSkills, claimAllSkills } = useAuth();
   const { skills: MY_SKILLS } = usePublisherSkills();
@@ -302,17 +304,17 @@ export default function Publish() {
 
       {/* NAV */}
       <nav style={{
-        position: "sticky", top: 0, zIndex: 100, height: 56, padding: "0 24px",
+        position: "sticky", top: 0, zIndex: 100, height: 56, padding: mobile ? "0 14px" : "0 24px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: "rgba(0,0,0,0.85)", backdropFilter: "blur(20px)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mobile ? 10 : 24 }}>
           <Wordmark size={20} clickable />
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>publish</span>
+          {!mobile && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>publish</span>}
         </div>
-        <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
-          {[
+        <div style={{ display: "flex", gap: mobile ? 10 : 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+          {!mobile && [
             { label: "Explore", path: "/explore" as const },
             { label: "Publish", path: "/publish" as const },
             { label: "Docs", path: "/docs" as const },
@@ -447,9 +449,33 @@ export default function Publish() {
         </div>
       )}
 
-      <div style={{ display: "flex", maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", maxWidth: 1200, margin: "0 auto" }}>
 
-        {/* SIDEBAR */}
+        {/* SIDEBAR — vertical on desktop, horizontal scrollable tabs on mobile */}
+        {mobile ? (
+          <div style={{
+            display: "flex", gap: 6, padding: "10px 14px", overflowX: "auto",
+            borderBottom: "1px solid rgba(255,255,255,0.04)",
+            WebkitOverflowScrolling: "touch", scrollbarWidth: "none",
+          }}>
+            {[
+              { id: "skills", label: "Skills" },
+              { id: "author", label: "Author" },
+              { id: "import", label: "Import" },
+              { id: "analytics", label: "Analytics" },
+              { id: "activity", label: "Activity" },
+              { id: "settings", label: "Settings" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{
+                padding: "6px 12px", borderRadius: 6, border: "none", whiteSpace: "nowrap",
+                background: tab === t.id ? "rgba(255,255,255,0.08)" : "transparent",
+                color: tab === t.id ? "#fff" : "rgba(255,255,255,0.40)",
+                fontSize: 12, fontWeight: tab === t.id ? 600 : 400,
+                fontFamily: M, cursor: "pointer",
+              }}>{t.label}</button>
+            ))}
+          </div>
+        ) : (
         <aside style={{
           width: 220, flexShrink: 0,
           borderRight: "1px solid rgba(255,255,255,0.04)",
@@ -482,13 +508,14 @@ export default function Publish() {
             </div>
           ))}
         </aside>
+        )}
 
         {/* MAIN */}
         <main style={{ flex: 1, minWidth: 0 }}>
 
           {/* STATS BAR */}
           <div style={{
-            display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "1px",
+            display: "grid", gridTemplateColumns: mobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: "1px",
             background: "rgba(255,255,255,0.04)",
             borderBottom: "1px solid rgba(255,255,255,0.04)",
           }}>
@@ -511,25 +538,25 @@ export default function Publish() {
             <>
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 80px 80px 80px 80px 70px",
-                padding: "10px 24px",
+                gridTemplateColumns: mobile ? "1fr 70px" : "1fr 80px 80px 80px 80px 70px",
+                padding: mobile ? "10px 14px" : "10px 24px",
                 borderBottom: "1px solid rgba(255,255,255,0.06)",
                 fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.2)",
                 letterSpacing: "0.08em", textTransform: "uppercase",
               }}>
                 <span>Skill</span>
                 <span style={{ textAlign: "right" }}>Status</span>
-                <span style={{ textAlign: "right" }}>Installs</span>
-                <span style={{ textAlign: "right" }}>Runs</span>
-                <span style={{ textAlign: "right" }}>Rating</span>
-                <span style={{ textAlign: "right" }}>Trend</span>
+                {!mobile && <span style={{ textAlign: "right" }}>Installs</span>}
+                {!mobile && <span style={{ textAlign: "right" }}>Runs</span>}
+                {!mobile && <span style={{ textAlign: "right" }}>Rating</span>}
+                {!mobile && <span style={{ textAlign: "right" }}>Trend</span>}
               </div>
 
               {MY_SKILLS.map(s => (
                 <div key={s.id} className="row-item" style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 80px 80px 80px 80px 70px",
-                  padding: "14px 24px", alignItems: "center",
+                  gridTemplateColumns: mobile ? "1fr 70px" : "1fr 80px 80px 80px 80px 70px",
+                  padding: mobile ? "12px 14px" : "14px 24px", alignItems: "center",
                   borderBottom: "1px solid rgba(255,255,255,0.03)",
                 }}>
                   <div>
@@ -546,12 +573,12 @@ export default function Publish() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}><StatusBadge status={s.status} /></div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.installs > 0 ? fmt(s.installs) : "—"}</div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.runs > 0 ? fmt(s.runs) : "—"}</div>
-                  <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.rating > 0 ? s.rating + " ★" : "—"}</div>
-                  <div style={{ textAlign: "right", fontSize: 12, fontFamily: M, color: s.trend > 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)" }}>
+                  {!mobile && <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.installs > 0 ? fmt(s.installs) : "—"}</div>}
+                  {!mobile && <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.runs > 0 ? fmt(s.runs) : "—"}</div>}
+                  {!mobile && <div style={{ textAlign: "right", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.5)" }}>{s.rating > 0 ? s.rating + " ★" : "—"}</div>}
+                  {!mobile && <div style={{ textAlign: "right", fontSize: 12, fontFamily: M, color: s.trend > 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)" }}>
                     {s.trend > 0 ? `+${s.trend}%` : "—"}
-                  </div>
+                  </div>}
                 </div>
               ))}
             </>

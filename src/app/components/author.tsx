@@ -9,6 +9,7 @@ import {
 import { useNavigate, useSearchParams, Link } from "react-router";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 import { preloadRoute } from "../routes";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -59,6 +60,7 @@ export default function Author() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const mobile = useIsMobile();
   const slug = (searchParams.get("skill") ?? "").trim() || null;
 
   // /author is the skill authoring assistant — for writing, reviewing, and
@@ -406,6 +408,7 @@ function Nav({
   navigate: ReturnType<typeof useNavigate>;
   skill: Skill | null;
 }) {
+  const mob = useIsMobile();
   return (
     <nav
       style={{
@@ -413,7 +416,7 @@ function Nav({
         top: 0,
         zIndex: 100,
         height: 56,
-        padding: "0 24px",
+        padding: mob ? "0 12px" : "0 24px",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -423,9 +426,9 @@ function Nav({
         borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 16 }}>
         <Wordmark size={20} clickable />
-        <span
+        {!mob && <span
           style={{
             fontSize: 12,
             color: "rgba(255, 255, 255, 0.40)",
@@ -433,10 +436,10 @@ function Nav({
           }}
         >
           {skill ? `authoring · ${skill.slug}` : "authoring"}
-        </span>
+        </span>}
       </div>
-      <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-        {[
+      <div style={{ display: "flex", gap: mob ? 10 : 20, alignItems: "center" }}>
+        {!mob && [
           { label: "Explore", path: "/explore" as const },
           { label: "Publish", path: "/publish" as const },
           { label: "Docs", path: "/docs" as const },
@@ -614,9 +617,11 @@ function Workbench({
     <div
       style={{
         flex: 1,
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 360px) minmax(0, 1fr)",
+        display: mobile ? "flex" : "grid",
+        flexDirection: mobile ? "column" : undefined,
+        gridTemplateColumns: mobile ? undefined : "minmax(0, 360px) minmax(0, 1fr)",
         minHeight: 0,
+        overflow: mobile ? "auto" : undefined,
       }}
     >
       <SkillPane skill={skill} />

@@ -61,6 +61,7 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
  * has marketing-page chrome that doesn't fit here. */
 function Shell({ children, route }: { children: React.ReactNode; route: string }) {
   const navigate = useNavigate();
+  const mob = useIsMobile();
   return (
     <div style={{ background: "#000", color: "#fff", minHeight: "100vh", fontFamily: F }}>
       <nav
@@ -69,7 +70,7 @@ function Shell({ children, route }: { children: React.ReactNode; route: string }
           top: 0,
           zIndex: 100,
           height: 56,
-          padding: "0 24px",
+          padding: mob ? "0 14px" : "0 24px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -79,14 +80,14 @@ function Shell({ children, route }: { children: React.ReactNode; route: string }
           borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 16 }}>
           <Wordmark size={20} clickable />
-          <span style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.40)", fontFamily: M }}>
+          {!mob && <span style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.40)", fontFamily: M }}>
             {route}
-          </span>
+          </span>}
         </div>
-        <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          {[
+        <div style={{ display: "flex", gap: mob ? 10 : 20, alignItems: "center" }}>
+          {!mob && [
             { label: "Explore", path: "/explore" as const },
             { label: "Publish", path: "/publish" as const },
             { label: "Docs", path: "/docs" as const },
@@ -197,7 +198,7 @@ export default function SkillDetail() {
           style={{
             maxWidth: 700,
             margin: "0 auto",
-            padding: "140px 48px",
+            padding: mobile ? "80px 18px" : "140px 48px",
             textAlign: "center",
           }}
         >
@@ -337,10 +338,10 @@ export default function SkillDetail() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 360px",
-            gap: 36,
+            gridTemplateColumns: mobile ? "1fr" : "minmax(0, 1fr) 360px",
+            gap: mobile ? 20 : 36,
             alignItems: "start",
-            marginBottom: 64,
+            marginBottom: mobile ? 36 : 64,
           }}
         >
           {/* INSTALL CARD */}
@@ -349,7 +350,7 @@ export default function SkillDetail() {
               background: "rgba(255, 255, 255, 0.02)",
               border: "1px solid rgba(255, 255, 255, 0.06)",
               borderRadius: 10,
-              padding: "24px 28px",
+              padding: mobile ? "18px 16px" : "24px 28px",
             }}
           >
             <Kicker>INSTALL</Kicker>
