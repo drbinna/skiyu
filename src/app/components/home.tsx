@@ -454,9 +454,17 @@ export default function Home() {
 
               {/* Generated skill actions — shown when skiyu has built a skill */}
               {generatedSkill && (
-                <div style={{ marginTop: 12, padding: "14px 16px", background: "rgba(34,211,238,0.04)", border: "1px solid rgba(34,211,238,0.15)", borderRadius: 12 }}>
-                  <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "#22d3ee", marginBottom: 8 }}>
-                    SKILL READY · {generatedSkill.name}
+                <div style={{ marginTop: 12, padding: "14px 16px", background: "rgba(34,211,238,0.04)", border: "1px solid rgba(34,211,238,0.15)", borderRadius: 12, position: "relative" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontFamily: M, fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: "#22d3ee" }}>
+                      SKILL READY · {generatedSkill.name}
+                    </div>
+                    <button type="button" onClick={() => setGeneratedSkill(null)}
+                      style={{ background: "none", border: "none", color: "rgba(255,255,255,0.30)", fontSize: 16, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "#fff"}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.30)"}>
+                      ✕
+                    </button>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button type="button"
