@@ -415,16 +415,16 @@ export default function Home() {
               {!hasMessages && options.length === 0 && (
                 <div style={{ display: "flex", flexWrap: mobile ? "nowrap" : "wrap", gap: 8, justifyContent: "center", marginTop: 12, overflowX: mobile ? "auto" : "visible", scrollbarWidth: "none" }}>
                   {[
-                    { icon: "🔍", label: "Find a skill", prompt: "Help me find a skill for " },
-                    { icon: "✏️", label: "Author a skill", prompt: "I want to build a skill that " },
-                    { icon: "🚀", label: "Deploy to Claude", prompt: "How do I deploy a skill to Claude?" },
-                    { icon: "📦", label: "Import from GitHub", prompt: "I want to import a skill from my GitHub repo" },
+                    { icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="#22d3ee" strokeWidth="1.5"/><path d="M11 11L14.5 14.5" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round"/></svg>, label: "Find a skill", prompt: "Help me find a skill for " },
+                    { icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 2.5L13.5 6.5L5.5 14.5H1.5V10.5L9.5 2.5Z" stroke="#22d3ee" strokeWidth="1.5" strokeLinejoin="round"/><path d="M8 4L12 8" stroke="#22d3ee" strokeWidth="1.5"/></svg>, label: "Author a skill", prompt: "I want to build a skill that " },
+                    { icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2" stroke="#22d3ee" strokeWidth="1.5"/><circle cx="12" cy="4" r="2" stroke="#22d3ee" strokeWidth="1.5"/><circle cx="12" cy="12" r="2" stroke="#22d3ee" strokeWidth="1.5"/><path d="M6 7L10 5M6 9L10 11" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round"/></svg>, label: "Deploy to Claude", prompt: "How do I deploy a skill to Claude?" },
+                    { icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1V9M8 9L5 6M8 9L11 6" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 11V13C2 13.6 2.4 14 3 14H13C13.6 14 14 13.6 14 13V11" stroke="#22d3ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>, label: "Import from GitHub", prompt: "I want to import a skill from my GitHub repo" },
                   ].map(c => (
                     <button key={c.label} type="button" onClick={() => chip(c.prompt)}
-                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 100, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.40)", fontFamily: M, fontSize: 11, cursor: "pointer", transition: "all 150ms", whiteSpace: "nowrap", flexShrink: 0 }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.18)"; (e.currentTarget as HTMLElement).style.color = "#fff"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.40)"; }}>
-                      <span style={{ fontSize: 12 }}>{c.icon}</span>{c.label}
+                      style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 100, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.40)", fontFamily: M, fontSize: 11, cursor: "pointer", transition: "all 150ms", whiteSpace: "nowrap", flexShrink: 0 }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(34,211,238,0.35)"; (e.currentTarget as HTMLElement).style.color = "#fff"; (e.currentTarget as HTMLElement).style.background = "rgba(34,211,238,0.04)"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.40)"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)"; }}>
+                      {c.icon}{c.label}
                     </button>
                   ))}
                 </div>
