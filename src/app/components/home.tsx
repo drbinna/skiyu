@@ -317,21 +317,21 @@ export default function Home() {
       <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100vh" }}>
 
         {/* Top bar */}
-        <div style={{ flexShrink: 0, height: 52, padding: mobile ? "0 14px" : "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flexShrink: 0, height: 52, padding: mobile ? "0 14px" : "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.04)", position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: mobile ? 60 : 100 }}>
             {mobile && (
               <button type="button" onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.50)", fontSize: 18, cursor: "pointer", padding: "4px" }}>☰</button>
             )}
             {mobile && <Wordmark size={16} clickable />}
-            {!mobile && (
-              <div style={{ display: "flex", gap: 16 }}>
-                {(["Explore", "Publish"] as const).map(l => {
-                  const p = `/${l.toLowerCase()}` as keyof typeof preloadRoute;
-                  return <span key={l} role="link" tabIndex={0} onClick={() => navigate(p)} onMouseEnter={() => preloadRoute[p]?.()} style={{ fontFamily: F, fontStyle: "italic", fontSize: 13, color: "rgba(255,255,255,0.40)", cursor: "pointer" }}>{l}</span>;
-                })}
-              </div>
-            )}
           </div>
+          {!mobile && (
+            <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", display: "flex", gap: 24 }}>
+              {(["Explore", "Publish", "Docs"] as const).map(l => {
+                const p = `/${l.toLowerCase()}` as keyof typeof preloadRoute;
+                return <span key={l} role="link" tabIndex={0} onClick={() => navigate(p)} onMouseEnter={() => preloadRoute[p]?.()} style={{ fontFamily: F, fontStyle: "italic", fontSize: 13, color: "rgba(255,255,255,0.40)", cursor: "pointer" }}>{l}</span>;
+              })}
+            </div>
+          )}
           <NavAuth />
         </div>
 

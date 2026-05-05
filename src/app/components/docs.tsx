@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 import { preloadRoute } from "../routes";
 
 const M = "'Fragment Mono', monospace";
@@ -11,448 +12,253 @@ const DOCS_TREE = [
   { section: "Getting started", items: [
     { id: "intro", label: "What is skiyu?" },
     { id: "quickstart", label: "Quickstart" },
-    { id: "installing", label: "Installing skills" },
   ]},
-  { section: "Publishing", items: [
-    { id: "writing-skillmd", label: "Writing SKILL.md" },
-    { id: "publishing", label: "Publishing & validation" },
+  { section: "Using skiyu", items: [
+    { id: "finding", label: "Finding skills" },
+    { id: "authoring", label: "Authoring skills" },
+    { id: "publishing", label: "Publishing skills" },
   ]},
-  { section: "Collaboration", items: [
-    { id: "forking", label: "Forking & pull requests" },
+  { section: "Deploying", items: [
+    { id: "mcp-server", label: "MCP Server" },
+    { id: "playwright", label: "Playwright CLI" },
+    { id: "download", label: "Download & install" },
   ]},
   { section: "Reference", items: [
-    { id: "cli-reference", label: "CLI reference" },
-    { id: "api-reference", label: "API reference" },
-    { id: "skill-chains", label: "Skill chains" },
+    { id: "skillmd", label: "SKILL.md format" },
+    { id: "api", label: "API reference" },
+  ]},
+  { section: "Coming soon", items: [
+    { id: "skill-chains", label: "Skill Chain" },
   ]},
 ];
 
-type Block = { type: string; text?: string; lang?: string; num?: string; title?: string; term?: string; desc?: string; name?: string; variant?: string };
+type Block = { type: string; text?: string; };
 
-const CONTENT: Record<string, { title: string; breadcrumb: string; body: Block[] }> = {
+const CONTENT: Record<string, { title: string; body: Block[] }> = {
   "intro": {
     title: "What is skiyu?",
-    breadcrumb: "Getting started",
     body: [
-      { type: "p", text: "skiyu is the open marketplace where AI engineers discover, share, and install Claude skills. A skill is a self-contained instruction package that extends what Claude can do — from generating PDFs and reviewing code to building data pipelines and drafting legal contracts." },
-      { type: "p", text: "Think of it as npm for AI workflows. You install a skill, and Claude immediately gains new capabilities." },
-      { type: "heading", text: "What you can do" },
-      { type: "p", text: "As a consumer, you can browse thousands of skills, install them with a single command, and combine them into powerful chains. As a publisher, you can package your best Claude workflows into reusable skills and share them with the community." },
-      { type: "heading", text: "How skills work" },
-      { type: "p", text: "A skill is a .skill file (a ZIP archive) containing a SKILL.md instruction file and optional scripts, references, and assets. When installed, Claude reads the SKILL.md to understand new capabilities and follows its instructions to complete tasks." },
-      { type: "code", lang: "text", text: "my-skill/\n├── SKILL.md          ← Instructions for Claude\n├── scripts/          ← Optional automation scripts\n├── references/       ← Optional documentation\n├── assets/           ← Optional templates, fonts, icons\n├── tests/            ← Optional test cases\n└── LICENSE.txt       ← Recommended" },
-      { type: "heading", text: "Key concepts" },
-      { type: "def", term: "Skill", desc: "A packaged set of instructions and tools that teach Claude a new capability." },
-      { type: "def", term: "Publisher", desc: "Anyone who creates and shares skills on skiyu. Can be an individual or a team." },
-      { type: "def", term: "Skill chain", desc: "Multiple skills wired together into a pipeline. Each skill's output feeds the next." },
-      { type: "def", term: "Trust score", desc: "A composite score (0–100) reflecting a publisher's reliability based on ratings, installs, and history." },
-      { type: "callout", variant: "info", text: "Ready to jump in? Follow the Quickstart guide to install your first skill in under 5 minutes." },
-    ]
+      { type: "p", text: "skiyu is the world's first skill engineering platform. It's where engineers find, author, and deploy Claude skills — all from one place." },
+      { type: "p", text: "A skill is a SKILL.md file: a set of instructions that tells Claude how to perform a specific task. Code reviews, security audits, landing page generation, market analysis — each one is a skill." },
+      { type: "h", text: "Three things skiyu does" },
+      { type: "p", text: "Find skills. The catalog has 1,091 skills across 12 categories, all searchable from the homepage chat or the explore page. Every skill has quality scores, risk signals, input/output types, and capabilities metadata." },
+      { type: "p", text: "Author skills. Describe what you want to build in the chat and skiyu drafts the SKILL.md for you. Refine it through conversation, then download or publish when it's ready." },
+      { type: "p", text: "Deploy skills. Connect skiyu's MCP server to Claude once, and every skill in the catalog is available in any conversation. Or download the zip and install it manually." },
+      { type: "h", text: "How it's different" },
+      { type: "p", text: "Most skill directories are static lists you browse. skiyu is a platform where you can search by asking natural language questions, author skills through a chat interface, deploy to Claude with zero uploads, and iterate on skills in a single session." },
+      { type: "p", text: "Think of it as npm for agent instructions. You don't browse npm's website to install packages — you tell npm what you need and it gets it. skiyu does the same for skills." },
+    ],
   },
   "quickstart": {
     title: "Quickstart",
-    breadcrumb: "Getting started",
     body: [
-      { type: "p", text: "Get up and running with skiyu in five minutes. By the end, you'll have the CLI installed and your first skill running." },
-      { type: "step", num: "1", title: "Install the CLI", text: "Install the skiyu CLI globally using npm. Requires Node.js 18 or later." },
-      { type: "code", lang: "bash", text: "npm install -g skiyu" },
-      { type: "step", num: "2", title: "Authenticate", text: "Log in with your skiyu account. This opens a browser window to complete authentication." },
-      { type: "code", lang: "bash", text: "skiyu login" },
-      { type: "step", num: "3", title: "Install a skill", text: "Install your first skill. Let's start with PDF Architect, one of the most popular skills on the platform." },
-      { type: "code", lang: "bash", text: "skiyu install @synthwave/pdf-architect" },
-      { type: "code", lang: "text", text: "✓ Fetching @synthwave/pdf-architect@2.4.1\n✓ Verified checksum (SHA-256)\n✓ Installed to ~/.skiyu/skills/\n✓ Ready — Claude can now use PDF Architect" },
-      { type: "step", num: "4", title: "Use it", text: "Open Claude and ask it to use your new skill. Claude automatically detects installed skills." },
-      { type: "code", lang: "text", text: "You: Generate a PDF report from this CSV data\nClaude: I'll use PDF Architect to create that report.\n       [reads SKILL.md → runs scripts → produces report.pdf]" },
-      { type: "step", num: "5", title: "Explore more", text: "Browse the marketplace to find more skills for your workflow." },
-      { type: "code", lang: "bash", text: "skiyu search \"data pipeline\"\nskiyu explore --category devops\nskiyu trending" },
-      { type: "callout", variant: "tip", text: "Use skiyu list to see all installed skills, and skiyu update to update them all at once." },
-    ]
+      { type: "p", text: "There are three ways to start using skiyu, depending on what you need." },
+      { type: "h", text: "1. Find and use a skill (30 seconds)" },
+      { type: "p", text: "Go to skiyu.dev and type what you need in the chat. For example: \"Find me a skill for code review.\" skiyu searches the catalog and shows matching skills as clickable cards. Click one to see details, download, or view the full skill page." },
+      { type: "h", text: "2. Connect skiyu to Claude (30 seconds)" },
+      { type: "p", text: "Go to claude.ai, then Settings, then Connectors, then Add. Paste this URL:" },
+      { type: "code", text: "https://mkqiqkqgnywosbneibqx.supabase.co/functions/v1/skiyu-mcp" },
+      { type: "p", text: "That's it. Now in any Claude conversation, you can say: \"Use the website-cloner skill from skiyu\" and Claude will call skiyu's API, get the skill, and follow its instructions." },
+      { type: "h", text: "3. Author a new skill (2 minutes)" },
+      { type: "p", text: "On the homepage, type: \"I want to build a skill that does market analysis.\" skiyu will ask you a few questions, then generate a complete SKILL.md. You'll get buttons to download it as a zip, publish it to the marketplace, or test it — all without leaving the chat." },
+    ],
   },
-  "installing": {
-    title: "Installing skills",
-    breadcrumb: "Getting started",
+  "finding": {
+    title: "Finding skills",
     body: [
-      { type: "p", text: "There are two ways to install skills: through the CLI (recommended for engineers) or through the web interface (no terminal needed)." },
-      { type: "heading", text: "Via CLI" },
-      { type: "p", text: "The skiyu install command downloads, verifies, and installs a skill in one step." },
-      { type: "code", lang: "bash", text: "# Install latest version\nskiyu install @author/skill-name\n\n# Install a specific version\nskiyu install @author/skill-name@2.1.0\n\n# Install from a local .skill file\nskiyu install ./my-skill.skill" },
-      { type: "heading", text: "Via web" },
-      { type: "p", text: "On any skill's detail page, click the Install button. You'll be given a CLI command to copy, or you can click \"Add to Claude\" to install directly if you're using Claude's web interface." },
-      { type: "heading", text: "Where skills are stored" },
-      { type: "p", text: "Installed skills live in your local skill directory. Claude reads from this directory when looking for available skills." },
-      { type: "code", lang: "bash", text: "# Default location\n~/.skiyu/skills/\n\n# View installed skills\nskiyu list\n\n# See details about a specific skill\nskiyu info @synthwave/pdf-architect" },
-      { type: "heading", text: "Updating skills" },
-      { type: "code", lang: "bash", text: "# Update a single skill\nskiyu update @author/skill-name\n\n# Update all installed skills\nskiyu update\n\n# Pin to a version (skip auto-updates)\nskiyu pin @author/skill-name@2.1.0" },
-      { type: "heading", text: "Uninstalling" },
-      { type: "code", lang: "bash", text: "skiyu uninstall @author/skill-name" },
-      { type: "callout", variant: "info", text: "You can reinstall any previously installed skill anytime." },
-    ]
+      { type: "p", text: "There are three ways to find skills on skiyu." },
+      { type: "h", text: "Homepage chat" },
+      { type: "p", text: "Type a natural language query like \"Find me a skill for security auditing\" or \"Show me skills for DevOps.\" skiyu searches the catalog directly and shows results as compact cards. Click a card to see full details, download, or view the skill page." },
+      { type: "h", text: "Explore page" },
+      { type: "p", text: "Browse the full catalog at skiyu.dev/explore. Filter by category (Security, Backend, DevOps, Testing, etc.), sort by quality score or update date, and search by keyword. Every skill card shows the name, author, category, license, and description." },
+      { type: "h", text: "MCP Server" },
+      { type: "p", text: "If you've connected skiyu to Claude, you can search from any Claude conversation. Say: \"Search skiyu for testing skills\" and Claude calls the skiyu_search tool, returning results with quality scores, risk levels, and capabilities." },
+      { type: "h", text: "Skill metadata" },
+      { type: "p", text: "Every skill in the catalog has structured metadata: tags, capabilities (generate, analyze, test, deploy, etc.), input type (text, url, file, code, repo), output type (text, report, tests, config, html, code), quality score (45-95), risk level (low/medium/high), risk signals (executes code, network access, file system, etc.), and maturity (experimental/stable/production)." },
+    ],
   },
-  "writing-skillmd": {
-    title: "Writing SKILL.md",
-    breadcrumb: "Publishing",
+  "authoring": {
+    title: "Authoring skills",
     body: [
-      { type: "p", text: "SKILL.md is the core of every skill. It tells Claude what your skill does, when to use it, and how to execute it. A well-written SKILL.md is the difference between a skill that works and one that works beautifully." },
-      { type: "heading", text: "File structure" },
-      { type: "p", text: "Every SKILL.md has two parts: YAML frontmatter (metadata) and a Markdown body (instructions)." },
-      { type: "code", lang: "yaml", text: "---\nname: pdf-architect\ndescription: \"Generate, merge, split, and watermark PDFs.\"\nversion: 2.4.1\nauthor: synthwave_dev\nlicense: MIT\ncategories:\n  - documents\n  - pdf\ntags:\n  - pdf\n  - generation\n  - merge\n---\n\n# PDF Architect\n\nYour Markdown instructions go here..." },
-      { type: "heading", text: "Frontmatter fields" },
-      { type: "def", term: "name", desc: "Required. Unique identifier for your skill. Lowercase, hyphens only." },
-      { type: "def", term: "description", desc: "Required. One-line summary shown in search results and the explore page." },
-      { type: "def", term: "version", desc: "Required. Semantic version (e.g. 1.0.0). Must increment with each publish." },
-      { type: "def", term: "author", desc: "Required. Your skiyu username." },
-      { type: "def", term: "license", desc: "Required. MIT, Apache-2.0, or proprietary." },
-      { type: "def", term: "categories", desc: "Optional. One or more from: documents, code, data, devops, research, creative, legal, finance, testing, api." },
-      { type: "def", term: "tags", desc: "Optional. Freeform tags for search discovery." },
-      { type: "heading", text: "Writing the body" },
-      { type: "p", text: "The Markdown body is what Claude reads when using your skill. Write it as clear instructions addressed to Claude. Be specific about what the skill does, what inputs it expects, what outputs it produces, and what steps to follow." },
-      { type: "callout", variant: "tip", text: "Write your SKILL.md as if you're explaining the task to a smart colleague who has never done it before. Be explicit about edge cases and output formats." },
-      { type: "heading", text: "Adding scripts" },
-      { type: "p", text: "If your skill needs to run code (e.g. generating files, calling APIs, processing data), add scripts to the scripts/ directory. Reference them from your SKILL.md body with clear instructions on when and how to run them." },
-      { type: "code", lang: "text", text: "my-skill/\n├── SKILL.md\n├── scripts/\n│   ├── generate.py\n│   └── validate.sh\n├── references/\n│   └── api-docs.md\n└── assets/\n    └── template.docx" },
-      { type: "heading", text: "Best practices" },
-      { type: "p", text: "Keep your SKILL.md under 500 lines. If it's getting longer, move detailed reference material into the references/ directory and point to it from the main file. Use clear section headings. Include example inputs and outputs so Claude knows exactly what success looks like." },
-    ]
+      { type: "p", text: "skiyu helps you write skills through a conversational interface. You describe what you want, skiyu asks clarifying questions, then generates the complete SKILL.md." },
+      { type: "h", text: "The authoring flow" },
+      { type: "p", text: "On the homepage, type something like: \"I want to build a skill that reviews Python code for security vulnerabilities.\" skiyu will ask what kind of review (OWASP top 10, dependency scanning, code patterns), what depth, and what output format. After you answer, it generates the full SKILL.md with frontmatter, instructions, and examples." },
+      { type: "h", text: "After generation" },
+      { type: "p", text: "Once the skill is generated, you'll see action buttons below the chat input: Download as .zip (browser download with correct folder structure), Publish to marketplace (goes to the publish page), Test skill (asks skiyu to demonstrate it), and Make changes (continues the conversation to iterate)." },
+      { type: "h", text: "Iteration" },
+      { type: "p", text: "Skills rarely come out perfect on the first try. Click \"Make changes\" to refine the instructions, add edge cases, adjust the output format, or narrow the scope. skiyu remembers the conversation and generates an updated SKILL.md." },
+      { type: "h", text: "SKILL.md structure" },
+      { type: "p", text: "Every skill is a single SKILL.md file with YAML frontmatter (name, description, version, allowed_tools) followed by markdown instructions. The instructions tell Claude exactly what to do when the skill is activated. See the SKILL.md format reference for the full specification." },
+    ],
   },
   "publishing": {
-    title: "Publishing & validation",
-    breadcrumb: "Publishing",
+    title: "Publishing skills",
     body: [
-      { type: "p", text: "Once your skill is ready, publish it to skiyu so others can discover and install it." },
-      { type: "heading", text: "Validate first" },
-      { type: "p", text: "Before publishing, run validation to catch issues early. This checks your package structure, frontmatter, and runs linting on any scripts." },
-      { type: "code", lang: "bash", text: "skiyu validate ./my-skill" },
-      { type: "code", lang: "text", text: "✓ SKILL.md found\n✓ Frontmatter valid (name, version, author, license)\n✓ Scripts scanned — no issues\n✓ Package size: 24KB\n✓ Ready to publish" },
-      { type: "heading", text: "Testing in sandbox" },
-      { type: "p", text: "Run your test suite in a sandboxed environment to verify the skill works as expected." },
-      { type: "code", lang: "bash", text: "skiyu test ./my-skill" },
-      { type: "heading", text: "Publishing" },
-      { type: "p", text: "When validation passes, publish your skill. This packages the directory into a .skill file, uploads it, and submits it for review." },
-      { type: "code", lang: "bash", text: "skiyu publish ./my-skill" },
-      { type: "code", lang: "text", text: "✓ Packaged my-skill@1.0.0 (24KB)\n✓ Uploaded to skiyu\n✓ Submitted for review\n\nYour skill will be reviewed within 24 hours." },
-      { type: "heading", text: "What happens during review" },
-      { type: "p", text: "Every skill goes through automated checks: package structure validation, script security scanning (static analysis for malicious patterns), and an AI quality score (0–100). Free skills from trusted publishers with a track record are auto-approved. First-time publishers go through human review." },
-      { type: "heading", text: "Versioning" },
-      { type: "p", text: "Skills follow semantic versioning. Each new publish must increment the version in your frontmatter." },
-      { type: "code", lang: "bash", text: "# Publish an update\n# (make sure version in SKILL.md is incremented)\nskiyu publish ./my-skill" },
-      { type: "callout", variant: "info", text: "You can also publish via the web interface. Navigate to Publish → New Skill and drag-and-drop your .skill file or folder." },
-    ]
+      { type: "p", text: "There are three ways to publish a skill to skiyu's catalog." },
+      { type: "h", text: "Upload a zip" },
+      { type: "p", text: "Go to skiyu.dev/publish, click \"+ New Skill\", and drag a .zip file containing a SKILL.md. skiyu automatically extracts the name and description from the frontmatter. You can optionally edit the description before publishing. The skill goes to your dashboard as \"pending\" and will be reviewed before appearing in the catalog." },
+      { type: "h", text: "Import from GitHub" },
+      { type: "p", text: "On the publish page, click the \"Import from GitHub\" tab. Paste your repo URL and skiyu scans it for SKILL.md files. You'll see a preview of each one and can import with a single click. This is useful if you already have skills in your repo." },
+      { type: "h", text: "Author and publish" },
+      { type: "p", text: "Author a skill in the homepage chat, click \"Download .zip\", then upload it on the publish page. The entire flow — from idea to published skill — takes about 5 minutes." },
+      { type: "h", text: "Your dashboard" },
+      { type: "p", text: "The publish page shows your skills in the \"My Skills\" tab: claimed skills from the catalog (if you're an existing author) and uploaded skills with their review status (pending, approved, rejected). You can also see install counts, runs, and ratings." },
+    ],
   },
-  "forking": {
-    title: "Forking & pull requests",
-    breadcrumb: "Collaboration",
+  "mcp-server": {
+    title: "MCP Server",
     body: [
-      { type: "p", text: "This feature is under development and will be available in a future release. Check back soon or follow our changelog for updates." },
-      { type: "callout", variant: "info", text: "Want this sooner? Let us know what you'd build with it — your feedback shapes our roadmap." },
-    ]
+      { type: "p", text: "The MCP server is skiyu's primary deployment path. Connect it once to Claude, and every skill in the catalog is available without downloads or uploads." },
+      { type: "h", text: "Setup" },
+      { type: "p", text: "Go to claude.ai, then Settings, then Connectors, then Add connector. Paste:" },
+      { type: "code", text: "https://mkqiqkqgnywosbneibqx.supabase.co/functions/v1/skiyu-mcp" },
+      { type: "p", text: "Save it. That's the entire setup. Takes about 30 seconds." },
+      { type: "h", text: "How it works" },
+      { type: "p", text: "When you mention a skiyu skill in any Claude conversation, Claude calls skiyu's MCP server to search the catalog, get skill details, or load the full SKILL.md instructions. Claude then follows those instructions for your task." },
+      { type: "h", text: "Available tools" },
+      { type: "p", text: "The MCP server exposes four tools to Claude: skiyu_search (search the catalog by keyword, capability, input type, or risk level), skiyu_details (get full details for a skill by slug), skiyu_get_skill (load the complete SKILL.md for Claude to follow), and skiyu_catalog (browse featured and popular skills by category)." },
+      { type: "h", text: "Example usage" },
+      { type: "p", text: "In any Claude conversation after connecting: \"Use the website-cloner skill from skiyu to clone stripe.com\" or \"Search skiyu for low-risk testing skills that take a repo as input\" or \"What skills does skiyu have for DevOps?\"" },
+      { type: "h", text: "Discovery endpoint" },
+      { type: "p", text: "GET the MCP URL in a browser to see server info, available tools, and full catalog statistics including capability distribution, risk levels, and input/output type breakdowns." },
+    ],
   },
-  "cli-reference": {
-    title: "CLI reference",
-    breadcrumb: "Reference",
+  "playwright": {
+    title: "Playwright CLI deployment",
     body: [
-      { type: "p", text: "The skiyu CLI is the fastest way to install, publish, and manage skills. Below is the complete command reference." },
-      { type: "heading", text: "Global options" },
-      { type: "code", lang: "bash", text: "skiyu [command] [options]\n\n  --help, -h       Show help for a command\n  --version, -v    Print CLI version\n  --verbose        Show detailed output\n  --json           Output as JSON (for scripting)" },
-      { type: "heading", text: "Authentication" },
-      { type: "cmd", name: "skiyu login", desc: "Authenticate with your skiyu account. Opens a browser for OAuth." },
-      { type: "cmd", name: "skiyu logout", desc: "Clear stored credentials." },
-      { type: "cmd", name: "skiyu whoami", desc: "Print the currently authenticated user." },
-      { type: "heading", text: "Consuming skills" },
-      { type: "cmd", name: "skiyu install <skill>", desc: "Install a skill. Accepts @author/name, @author/name@version, or a local .skill file path." },
-      { type: "cmd", name: "skiyu uninstall <skill>", desc: "Remove an installed skill." },
-      { type: "cmd", name: "skiyu update [skill]", desc: "Update one or all installed skills to the latest version." },
-      { type: "cmd", name: "skiyu list", desc: "List all installed skills with version and status." },
-      { type: "cmd", name: "skiyu info <skill>", desc: "Show detail about a skill — description, version, author, dependencies." },
-      { type: "cmd", name: "skiyu search <query>", desc: "Search the marketplace. Supports filters: --category, --sort." },
-      { type: "cmd", name: "skiyu trending", desc: "Show trending skills this week." },
-      { type: "cmd", name: "skiyu pin <skill@version>", desc: "Pin a skill to a specific version, skipping auto-updates." },
-      { type: "heading", text: "Publishing" },
-      { type: "cmd", name: "skiyu init", desc: "Scaffold a new skill project in the current directory." },
-      { type: "cmd", name: "skiyu validate [path]", desc: "Validate a skill package. Checks structure, frontmatter, and runs linting." },
-      { type: "cmd", name: "skiyu test [path]", desc: "Run the skill's test suite in a sandboxed environment." },
-      { type: "cmd", name: "skiyu publish [path]", desc: "Package and publish a skill to skiyu. Runs validation first." },
-      { type: "cmd", name: "skiyu unpublish <skill@version>", desc: "Deprecate a specific version (does not delete — existing installs continue working)." },
-    ]
+      { type: "p", text: "For users who want skills permanently in their Claude Settings page, the skiyu-deploy skill uses Playwright CLI to automate the upload." },
+      { type: "h", text: "How it works" },
+      { type: "p", text: "The skiyu-deploy skill runs in Claude Code on your local machine. It downloads the skill zip from skiyu's API, then uses Playwright CLI to open claude.ai/settings/skills in your browser (where you're already logged in), upload the zip, and confirm. The entire process takes 3-5 seconds." },
+      { type: "h", text: "Why it's fast" },
+      { type: "p", text: "Unlike cloud browser automation (which requires new login sessions and costs money), Playwright CLI runs in your own browser where you're already authenticated. No API keys, no cloud services, no monthly costs." },
+      { type: "h", text: "Setup" },
+      { type: "p", text: "Install the Playwright CLI:" },
+      { type: "code", text: "npm install -g @anthropic-ai/playwright-cli\nnpx playwright install chromium" },
+      { type: "p", text: "Then in Claude Code: \"Deploy the website-cloner skill from skiyu.\" Claude loads the skiyu-deploy skill and handles the rest." },
+    ],
   },
-  "api-reference": {
+  "download": {
+    title: "Download & manual install",
+    body: [
+      { type: "p", text: "Every skill on skiyu can be downloaded as a .zip file. This is the simplest deployment method and works everywhere." },
+      { type: "h", text: "From the catalog" },
+      { type: "p", text: "On any skill card, click the \"Download\" button. The .zip file contains a folder with the SKILL.md file inside." },
+      { type: "h", text: "Installing in Claude Code" },
+      { type: "p", text: "Unzip the download and place the skill folder in your project's .claude/skills/ directory, or wherever your Claude Code skills are configured." },
+      { type: "h", text: "Installing in Claude.ai" },
+      { type: "p", text: "Go to claude.ai, then Settings, then Skills. Click \"Create skill\" or \"Add skill\" and upload the zip. The skill will appear in your skills list and be available in all conversations." },
+    ],
+  },
+  "skillmd": {
+    title: "SKILL.md format",
+    body: [
+      { type: "p", text: "Every skill is a single SKILL.md file. It contains YAML frontmatter for metadata, followed by markdown instructions that tell Claude how to behave." },
+      { type: "h", text: "Frontmatter" },
+      { type: "p", text: "The frontmatter block at the top of the file defines metadata:" },
+      { type: "code", text: "---\nname: market-analysis\ndescription: Comprehensive market research and competitive analysis\nversion: 1.0.0\nlicense: MIT\nallowed_tools: bash, write_file, read_file\n---" },
+      { type: "p", text: "Required fields: name, description. Optional: version, license, allowed_tools, argument-hint, user-invocable." },
+      { type: "h", text: "Instructions" },
+      { type: "p", text: "After the frontmatter, write the instructions in markdown. Use headings, lists, and code blocks to structure the skill's behavior. Be specific about what the skill should do, what inputs it expects, what outputs it produces, and how it should handle edge cases." },
+      { type: "h", text: "Best practices" },
+      { type: "p", text: "Be concrete, not abstract. Instead of \"analyze the code\", say \"check for SQL injection, XSS, and CSRF vulnerabilities in every route handler.\" Include examples of expected input and output. Define what the skill does NOT do (scope boundaries). Specify the output format explicitly." },
+    ],
+  },
+  "api": {
     title: "API reference",
-    breadcrumb: "Reference",
     body: [
-      { type: "p", text: "This feature is under development and will be available in a future release. Check back soon or follow our changelog for updates." },
-      { type: "callout", variant: "info", text: "Want this sooner? Let us know what you'd build with it — your feedback shapes our roadmap." },
-    ]
+      { type: "p", text: "skiyu exposes a public API via the MCP server. All endpoints are available at the base URL:" },
+      { type: "code", text: "https://mkqiqkqgnywosbneibqx.supabase.co/functions/v1/skiyu-mcp" },
+      { type: "h", text: "GET / — Discovery" },
+      { type: "p", text: "Returns server info, available tools, and catalog statistics. No authentication required." },
+      { type: "h", text: "POST / — MCP protocol" },
+      { type: "p", text: "Accepts JSON-RPC 2.0 requests following the Model Context Protocol specification. Methods: initialize, tools/list, tools/call. No authentication required." },
+      { type: "h", text: "Tools" },
+      { type: "p", text: "skiyu_search: search by keyword, capability (generate, analyze, test, deploy, transform, document, debug, security, monitor, design, scrape, automate), input_type (text, url, file, code, repo), and risk_level (low, medium, high). Returns up to 25 results with full metadata." },
+      { type: "p", text: "skiyu_details: get full details for a skill by slug. Returns description, audience, quality score, risk signals, allowed tools, maturity, and verification status." },
+      { type: "p", text: "skiyu_get_skill: load the complete SKILL.md content for a skill. This is what Claude uses to follow the skill's instructions." },
+      { type: "p", text: "skiyu_catalog: browse the catalog by category. Returns skills ordered by quality score with full metadata." },
+      { type: "h", text: "Zip download" },
+      { type: "p", text: "Skills can also be downloaded as zip files via the zip-skill-folder endpoint. This is used internally by the download buttons and the Playwright CLI deployment skill." },
+    ],
   },
   "skill-chains": {
-    title: "Skill chains",
-    breadcrumb: "Reference",
+    title: "Skill Chain",
     body: [
-      { type: "p", text: "This feature is under development and will be available in a future release. Check back soon or follow our changelog for updates." },
-      { type: "callout", variant: "info", text: "Want this sooner? Let us know what you'd build with it — your feedback shapes our roadmap." },
-    ]
+      { type: "p", text: "Skill Chain is an upcoming feature that lets you combine multiple skills into automated workflows. Instead of using one skill at a time, you'll chain them together: the output of one skill becomes the input of the next." },
+      { type: "h", text: "How it will work" },
+      { type: "p", text: "You'll define a chain as a sequence of skills with connection rules. For example: a code-reviewer skill runs first and produces a report, then a test-generator skill reads that report and creates tests for the flagged issues, then a documentation skill generates updated docs reflecting the fixes." },
+      { type: "h", text: "Use cases" },
+      { type: "p", text: "Full security audit pipeline: scan for vulnerabilities, generate fix recommendations, create patches, write tests for each fix. Content production: research a topic, write a draft, review for tone and accuracy, format for publication. DevOps setup: scaffold infrastructure, generate CI/CD config, create monitoring dashboards, write runbook documentation." },
+      { type: "h", text: "Status" },
+      { type: "p", text: "Skill Chain is currently in design. The MCP server and structured metadata (input/output types, capabilities) are the foundation that makes chaining possible — every skill already declares what it takes as input and what it produces as output. When Skill Chain launches, the catalog will suggest compatible chains based on these declarations." },
+    ],
   },
 };
 
-const DEFAULT_PAGE = "intro";
-
 export default function Docs() {
-  const [active, setActive] = useState(DEFAULT_PAGE);
-  const [search, setSearch] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
-    Object.fromEntries(DOCS_TREE.map(s => [s.section, true]))
-  );
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState("intro");
   const navigate = useNavigate();
+  const mobile = useIsMobile();
 
-  const page = CONTENT[active] || CONTENT[DEFAULT_PAGE];
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const filteredTree = search
-    ? DOCS_TREE.map(s => ({
-        ...s,
-        items: s.items.filter(i => i.label.toLowerCase().includes(search.toLowerCase()))
-      })).filter(s => s.items.length > 0)
-    : DOCS_TREE;
-
-  useEffect(() => {
-    if (contentRef.current) contentRef.current.scrollTop = 0;
-  }, [active]);
-
-  const renderBlock = (block: Block, i: number) => {
-    switch (block.type) {
-      case "p":
-        return <p key={i} style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.8, marginBottom: 16 }}>{block.text}</p>;
-      case "heading":
-        return <h3 key={i} style={{ fontSize: 15, fontWeight: 700, marginTop: 32, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{block.text}</h3>;
-      case "code":
-        return (
-          <div key={i} style={{ marginBottom: 16, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
-            {block.lang && (
-              <div style={{ padding: "6px 14px", fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em", textTransform: "uppercase", borderBottom: "1px solid rgba(255,255,255,0.04)", background: "rgba(255,255,255,0.02)" }}>
-                {block.lang}
-              </div>
-            )}
-            <pre style={{ padding: "14px 16px", fontSize: 13, fontFamily: M, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, overflowX: "auto", margin: 0, background: "rgba(255,255,255,0.015)" }}>
-              {block.text}
-            </pre>
-          </div>
-        );
-      case "step":
-        return (
-          <div key={i} style={{ display: "flex", gap: 14, marginBottom: 8, marginTop: 24 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 7, flexShrink: 0,
-              background: "#fff", color: "#000", fontSize: 12, fontWeight: 700, fontFamily: M,
-              display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1,
-            }}>{block.num}</div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{block.title}</div>
-              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>{block.text}</div>
-            </div>
-          </div>
-        );
-      case "def":
-        return (
-          <div key={i} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, width: 140, flexShrink: 0, fontFamily: M, color: "rgba(255,255,255,0.6)" }}>{block.term}</span>
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>{block.desc}</span>
-          </div>
-        );
-      case "cmd":
-        return (
-          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-            <code style={{ fontSize: 13, fontFamily: M, color: "#fff", fontWeight: 500 }}>{block.name}</code>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", lineHeight: 1.5 }}>{block.desc}</span>
-          </div>
-        );
-      case "callout": {
-        const isTip = block.variant === "tip";
-        return (
-          <div key={i} style={{
-            marginTop: 20, marginBottom: 16, padding: "14px 16px", borderRadius: 8,
-            background: "rgba(255,255,255,0.02)",
-            borderLeft: `3px solid ${isTip ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.12)"}`,
-          }}>
-            <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.25)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
-              {isTip ? "Tip" : "Note"}
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", lineHeight: 1.7 }}>{block.text}</div>
-          </div>
-        );
-      }
-      default:
-        return null;
-    }
-  };
+  const doc = CONTENT[active];
+  if (!doc) return null;
 
   return (
     <div style={{ background: "#000", color: "#fff", minHeight: "100vh", fontFamily: F }}>
-      <style>{`
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        ::selection{background:#fff;color:#000}
-        ::-webkit-scrollbar{width:3px}
-        ::-webkit-scrollbar-track{background:#000}
-        ::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
-        input::placeholder{color:rgba(255,255,255,0.15)}
-        .nav-link{transition:color .2s;cursor:pointer}
-        .nav-link:hover{color:#fff!important}
-        .doc-link{transition:all .2s;cursor:pointer;display:block;padding:5px 10px;border-radius:5px;margin-bottom:1px}
-        .doc-link:hover{background:rgba(255,255,255,0.04);color:#fff!important}
-        .section-toggle{cursor:pointer;transition:color .2s;display:flex;align-items:center;justify-content:space-between;user-select:none}
-        .section-toggle:hover{color:rgba(255,255,255,0.5)!important}
-        pre::-webkit-scrollbar{height:3px}
-        pre::-webkit-scrollbar-track{background:transparent}
-        pre::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
-      `}</style>
-
       {/* NAV */}
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 56, padding: "0 24px",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: "rgba(0,0,0,0.85)", backdropFilter: "blur(20px)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <Wordmark size={20} clickable />
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>docs</span>
-        </div>
-        <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+      <nav style={{ position: "sticky", top: 0, zIndex: 100, height: 56, padding: mobile ? "0 14px" : "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.90)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <Wordmark size={20} clickable />
+        <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", display: mobile ? "none" : "flex", gap: 24 }}>
           {[
             { label: "Explore", path: "/explore" as const },
             { label: "Publish", path: "/publish" as const },
             { label: "Docs", path: "/docs" as const },
           ].map(l => (
-            <span
-              key={l.label}
-              className="nav-link"
-              onClick={() => navigate(l.path)}
-              onMouseEnter={() => preloadRoute[l.path]?.()}
-              onFocus={() => preloadRoute[l.path]?.()}
-              tabIndex={0}
-              style={{ color: l.label === "Docs" ? "#fff" : undefined, fontWeight: l.label === "Docs" ? 600 : 400 }}
-            >{l.label}</span>
+            <span key={l.label} onClick={() => navigate(l.path)} onMouseEnter={() => preloadRoute[l.path]?.()} tabIndex={0}
+              style={{ cursor: "pointer", fontFamily: F, fontStyle: "italic", fontSize: 13, color: l.label === "Docs" ? "#fff" : "rgba(255,255,255,0.40)", fontWeight: l.label === "Docs" ? 600 : 400 }}>{l.label}</span>
           ))}
         </div>
         <NavAuth />
       </nav>
 
-      <div style={{ display: "flex", maxWidth: 1100, margin: "0 auto", paddingTop: 56 }}>
-
-        {/* SIDEBAR */}
-        <aside style={{
-          width: 240, flexShrink: 0,
-          borderRight: "1px solid rgba(255,255,255,0.04)",
-          position: "fixed", top: 56, left: "max(0px, calc((100vw - 1100px)/2))",
-          height: "calc(100vh - 56px)", overflowY: "auto",
-          padding: "16px 16px 40px",
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: 7, padding: "0 10px", marginBottom: 20,
-          }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search docs..."
-              style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "#fff", fontSize: 12, padding: "8px 0", fontFamily: F }}
-            />
-            {search && (
-              <span onClick={() => setSearch("")} style={{ cursor: "pointer", color: "rgba(255,255,255,0.2)", fontSize: 14 }}>×</span>
-            )}
+      <div style={{ display: "flex", maxWidth: 1100, margin: "0 auto", paddingTop: mobile ? 0 : 16 }}>
+        {/* Sidebar — hidden on mobile, horizontal tabs instead */}
+        {mobile ? (
+          <div style={{ overflowX: "auto", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: 6, WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+            {DOCS_TREE.flatMap(s => s.items).map(item => (
+              <button key={item.id} onClick={() => setActive(item.id)}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "none", whiteSpace: "nowrap", background: active === item.id ? "rgba(255,255,255,0.08)" : "transparent", color: active === item.id ? "#fff" : "rgba(255,255,255,0.40)", fontSize: 11, fontFamily: M, cursor: "pointer", fontWeight: active === item.id ? 600 : 400 }}>{item.label}</button>
+            ))}
           </div>
-
-          {filteredTree.map(section => (
-            <div key={section.section} style={{ marginBottom: 8 }}>
-              <div
-                className="section-toggle"
-                onClick={() => toggleSection(section.section)}
-                style={{
-                  fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.2)",
-                  letterSpacing: "0.08em", textTransform: "uppercase",
-                  padding: "6px 10px",
-                }}
-              >
-                <span>{section.section}</span>
-                <span style={{ fontSize: 10 }}>{expandedSections[section.section] ? "−" : "+"}</span>
+        ) : (
+          <aside style={{ width: 240, flexShrink: 0, padding: "20px 24px 40px", borderRight: "1px solid rgba(255,255,255,0.04)", position: "sticky", top: 72, height: "calc(100vh - 72px)", overflowY: "auto" }}>
+            {DOCS_TREE.map(section => (
+              <div key={section.section} style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: M, fontSize: 9, fontWeight: 600, letterSpacing: "0.20em", textTransform: "uppercase", color: "rgba(255,255,255,0.20)", marginBottom: 8 }}>{section.section}</div>
+                {section.items.map(item => (
+                  <button key={item.id} onClick={() => setActive(item.id)}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", marginBottom: 1, borderRadius: 5, border: "none", background: active === item.id ? "rgba(255,255,255,0.06)" : "transparent", color: active === item.id ? "#fff" : "rgba(255,255,255,0.40)", fontFamily: F, fontSize: 13, cursor: "pointer", fontWeight: active === item.id ? 600 : 400, transition: "all 150ms" }}>{item.label}</button>
+                ))}
               </div>
-              {expandedSections[section.section] && section.items.map(item => (
-                <div
-                  key={item.id}
-                  className="doc-link"
-                  onClick={() => { setActive(item.id); window.scrollTo(0, 0); }}
-                  style={{
-                    fontSize: 13,
-                    color: active === item.id ? "#fff" : "rgba(255,255,255,0.3)",
-                    fontWeight: active === item.id ? 600 : 400,
-                    background: active === item.id ? "rgba(255,255,255,0.05)" : "transparent",
-                    borderLeft: active === item.id ? "2px solid #fff" : "2px solid transparent",
-                    paddingLeft: active === item.id ? 8 : 10,
-                  }}
-                >
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          ))}
-        </aside>
+            ))}
+          </aside>
+        )}
 
-        {/* CONTENT */}
-        <main ref={contentRef} style={{
-          flex: 1, marginLeft: 240, padding: "40px 48px 120px",
-          maxWidth: 680, minHeight: "calc(100vh - 56px)",
-        }}>
-          <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.15)", letterSpacing: "0.06em", marginBottom: 8 }}>
-            <span style={{ cursor: "pointer" }} onClick={() => setActive("intro")}>Docs</span>
-            <span style={{ margin: "0 6px" }}>/</span>
-            <span>{page.breadcrumb}</span>
-          </div>
-
-          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", marginBottom: 8 }}>
-            {page.title}
-          </h1>
-
-          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", marginBottom: 28 }} />
-
-          {page.body.map(renderBlock)}
-
-          {/* bottom nav */}
-          <div style={{
-            display: "flex", justifyContent: "space-between", marginTop: 48, paddingTop: 20,
-            borderTop: "1px solid rgba(255,255,255,0.04)",
-          }}>
-            {(() => {
-              const allItems = DOCS_TREE.flatMap(s => s.items);
-              const idx = allItems.findIndex(i => i.id === active);
-              const prev = idx > 0 ? allItems[idx - 1] : null;
-              const next = idx < allItems.length - 1 ? allItems[idx + 1] : null;
-              return (
-                <>
-                  {prev ? (
-                    <div onClick={() => setActive(prev.id)} style={{ cursor: "pointer" }}>
-                      <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Previous</div>
-                      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: 500 }}>← {prev.label}</div>
-                    </div>
-                  ) : <div />}
-                  {next ? (
-                    <div onClick={() => setActive(next.id)} style={{ cursor: "pointer", textAlign: "right" }}>
-                      <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Next</div>
-                      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: 500 }}>{next.label} →</div>
-                    </div>
-                  ) : <div />}
-                </>
-              );
-            })()}
-          </div>
-
-          <div style={{ marginTop: 40, padding: "20px 0", borderTop: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Wordmark size={13} clickable color="rgba(255,255,255,0.12)" />
-            <span style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.08)" }}>
-              Found an error? Edit this page on GitHub →
-            </span>
-          </div>
+        {/* Content */}
+        <main style={{ flex: 1, minWidth: 0, padding: mobile ? "24px 16px 60px" : "24px 48px 80px", maxWidth: 720 }}>
+          <h1 style={{ fontFamily: F, fontWeight: 700, fontSize: mobile ? 24 : 32, letterSpacing: "-0.02em", marginBottom: 24, lineHeight: 1.1 }}>{doc.title}</h1>
+          {doc.body.map((block, i) => {
+            if (block.type === "p") return (
+              <p key={i} style={{ fontFamily: F, fontSize: 15, color: "rgba(255,255,255,0.65)", lineHeight: 1.7, marginBottom: 16 }}>{block.text}</p>
+            );
+            if (block.type === "h") return (
+              <h2 key={i} style={{ fontFamily: F, fontWeight: 700, fontSize: mobile ? 17 : 19, color: "#fff", marginTop: 32, marginBottom: 10, letterSpacing: "-0.01em" }}>{block.text}</h2>
+            );
+            if (block.type === "code") return (
+              <pre key={i} style={{ fontFamily: M, fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.60)", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "14px 16px", marginBottom: 16, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{block.text}</pre>
+            );
+            return null;
+          })}
         </main>
       </div>
     </div>
