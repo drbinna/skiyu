@@ -20,7 +20,6 @@ const DOCS_TREE = [
   ]},
   { section: "Deploying", items: [
     { id: "mcp-server", label: "MCP Server" },
-    { id: "playwright", label: "Playwright CLI" },
     { id: "download", label: "Download & install" },
   ]},
   { section: "Reference", items: [
@@ -121,20 +120,6 @@ const CONTENT: Record<string, { title: string; body: Block[] }> = {
       { type: "p", text: "In any Claude conversation after connecting: \"Use the website-cloner skill from skiyu to clone stripe.com\" or \"Search skiyu for low-risk testing skills that take a repo as input\" or \"What skills does skiyu have for DevOps?\"" },
       { type: "h", text: "Discovery endpoint" },
       { type: "p", text: "GET the MCP URL in a browser to see server info, available tools, and full catalog statistics including capability distribution, risk levels, and input/output type breakdowns." },
-    ],
-  },
-  "playwright": {
-    title: "Playwright CLI deployment",
-    body: [
-      { type: "p", text: "For users who want skills permanently in their Claude Settings page, the skiyu-deploy skill uses Playwright CLI to automate the upload." },
-      { type: "h", text: "How it works" },
-      { type: "p", text: "The skiyu-deploy skill runs in Claude Code on your local machine. It downloads the skill zip from skiyu's API, then uses Playwright CLI to open claude.ai/settings/skills in your browser (where you're already logged in), upload the zip, and confirm. The entire process takes 3-5 seconds." },
-      { type: "h", text: "Why it's fast" },
-      { type: "p", text: "Unlike cloud browser automation (which requires new login sessions and costs money), Playwright CLI runs in your own browser where you're already authenticated. No API keys, no cloud services, no monthly costs." },
-      { type: "h", text: "Setup" },
-      { type: "p", text: "Install the Playwright CLI:" },
-      { type: "code", text: "npm install -g @anthropic-ai/playwright-cli\nnpx playwright install chromium" },
-      { type: "p", text: "Then in Claude Code: \"Deploy the website-cloner skill from skiyu.\" Claude loads the skiyu-deploy skill and handles the rest." },
     ],
   },
   "download": {
