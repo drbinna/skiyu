@@ -190,6 +190,22 @@ export default function Publish() {
   const { user, profile, loading: authLoading, signInWithGitHub, claimableSkills, claimedSkills, claimAllSkills } = useAuth();
   const { skills: MY_SKILLS } = usePublisherSkills();
 
+  // User's uploaded/staged skills
+  const [stagedSkills, setStagedSkills] = useState<{ id: string; name: string; slug: string; description: string; status: string; created_at: string; zip_url: string | null }[]>([]);
+
+  const loadStagedSkills = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("skills_staged")
+      .select("id, name, slug, description, status, created_at, zip_url")
+      .eq("submitted_by", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setStagedSkills(data);
+  };
+
+  useEffect(() => { if (user) loadStagedSkills(); }, [user]);
+
   const totalInstalls = MY_SKILLS.reduce((a, s) => a + s.installs, 0);
   const avgRating = MY_SKILLS.filter(s => s.rating > 0).reduce((a, s) => a + s.rating, 0) / MY_SKILLS.filter(s => s.rating > 0).length;
   const totalRuns = MY_SKILLS.reduce((a, s) => a + s.runs, 0);
@@ -230,42 +246,100 @@ export default function Publish() {
   }, [uploadSkillTarget, claimedSkills]);
 
   const handleUpload = async () => {
-    if (!uploadFile || !user || !uploadSkillTarget) {
-      setUploadError("Please select a skill to upload for");
+    if (!uploadFile || !user) {
+      setUploadError("Sign in and select a file to upload");
       return;
     }
 
-    // Run description validation (spec §1 + §2).
-    const targetSkill = claimedSkills.find((s) => s.id === uploadSkillTarget);
-    const titleForValidation = targetSkill?.name || "";
-    const descForValidation = uploadDescription.trim();
-    if (descForValidation.length > 0) {
-      const { blocking } = validateDescription(titleForValidation, descForValidation);
-      if (blocking) {
-        setUploadError(blocking);
+    setUploadProgress(10);
+    setUploadError(null);
+
+    try {
+      // Step 1: Extract SKILL.md from the zip
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(uploadFile);
+
+      let skillMdContent = "";
+      let skillName = "";
+      let skillDescription = "";
+
+      // Find SKILL.md in the zip (at root or one level deep)
+      for (const [path, file] of Object.entries(zip.files)) {
+        if (file.dir) continue;
+        if (path.toLowerCase().endsWith("skill.md")) {
+          skillMdContent = await file.async("string");
+          break;
+        }
+      }
+
+      if (!skillMdContent) {
+        setUploadError("No SKILL.md found in the zip. Every skill needs a SKILL.md file.");
+        setUploadProgress(0);
         return;
       }
-    }
 
-    setUploadProgress(10);
-    const result = await uploadSkillPackage(
-      uploadSkillTarget,
-      user.id,
-      uploadFile,
-      uploadVersion
-    );
-    if (result.success) {
-      // Persist the revised description, if the creator provided one.
-      if (descForValidation.length > 0) {
-        await supabase
-          .from("skills")
-          .update({ description: descForValidation })
-          .eq("id", uploadSkillTarget);
+      // Parse frontmatter
+      const fmMatch = skillMdContent.match(/^---\s*\n([\s\S]*?)\n---/m);
+      if (fmMatch) {
+        const fm = fmMatch[1];
+        const nameMatch = fm.match(/^name:\s*(.+)$/m);
+        const descMatch = fm.match(/^description:\s*(.+)$/m);
+        if (nameMatch) skillName = nameMatch[1].trim().replace(/['"]/g, "");
+        if (descMatch) skillDescription = descMatch[1].trim().replace(/['"]/g, "");
       }
+
+      if (!skillName) {
+        // Fallback: use filename
+        skillName = uploadFile.name.replace(/\.zip$/i, "");
+      }
+
+      const slug = skillName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+      setUploadProgress(30);
+
+      // Step 2: Upload zip to Supabase Storage
+      const storagePath = `${user.id}/${slug}-${Date.now()}.zip`;
+      const { error: storageErr } = await supabase.storage
+        .from("skill-uploads")
+        .upload(storagePath, uploadFile, { contentType: "application/zip", upsert: true });
+
+      if (storageErr) {
+        setUploadError(`Storage upload failed: ${storageErr.message}`);
+        setUploadProgress(0);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage.from("skill-uploads").getPublicUrl(storagePath);
+
+      setUploadProgress(60);
+
+      // Step 3: Insert into skills_staged
+      const { error: insertErr } = await supabase.from("skills_staged").insert({
+        name: skillName,
+        slug,
+        description: uploadDescription.trim() || skillDescription || `Uploaded skill: ${skillName}`,
+        skill_md_content: skillMdContent,
+        submitted_by: user.id,
+        zip_url: urlData.publicUrl,
+        zip_size_bytes: uploadFile.size,
+        source: "upload",
+        status: "pending",
+        review_status: "pending",
+      });
+
+      if (insertErr) {
+        setUploadError(`Failed to save skill: ${insertErr.message}`);
+        setUploadProgress(0);
+        return;
+      }
+
       setUploadProgress(100);
       setUploadStep(2);
-    } else {
-      setUploadError(result.error || "Upload failed");
+
+      // Refresh staged skills list
+      loadStagedSkills();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
       setUploadProgress(0);
     }
   };
@@ -581,6 +655,36 @@ export default function Publish() {
                   </div>}
                 </div>
               ))}
+
+              {/* Uploaded / staged skills */}
+              {stagedSkills.length > 0 && (
+                <>
+                  <div style={{ padding: mobile ? "14px 14px 8px" : "16px 24px 8px", fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.20)", letterSpacing: "0.08em", textTransform: "uppercase", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                    UPLOADED SKILLS
+                  </div>
+                  {stagedSkills.map(s => (
+                    <div key={s.id} className="row-item" style={{
+                      display: "grid",
+                      gridTemplateColumns: mobile ? "1fr 70px" : "1fr 100px",
+                      padding: mobile ? "12px 14px" : "14px 24px", alignItems: "center",
+                      borderBottom: "1px solid rgba(255,255,255,0.03)",
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 3 }}>{s.name}</div>
+                        <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: mobile ? 240 : 400 }}>{s.description}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{
+                          fontSize: 10, fontFamily: M, fontWeight: 600, padding: "3px 8px", borderRadius: 4,
+                          background: s.status === "approved" ? "rgba(52,211,153,0.12)" : s.status === "rejected" ? "rgba(220,38,38,0.12)" : "rgba(255,255,255,0.04)",
+                          color: s.status === "approved" ? "#34d399" : s.status === "rejected" ? "#fca5a5" : "rgba(255,255,255,0.40)",
+                          letterSpacing: "0.04em", textTransform: "uppercase",
+                        }}>{s.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           )}
 
@@ -774,90 +878,22 @@ export default function Publish() {
                   </div>
 
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Target skill</div>
-                    <select
-                      value={uploadSkillTarget}
-                      onChange={(e) => setUploadSkillTarget(e.target.value)}
+                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Description (optional)</div>
+                    <textarea
+                      value={uploadDescription}
+                      onChange={(e) => setUploadDescription(e.target.value)}
+                      placeholder="What does this skill do? We'll auto-detect from SKILL.md if left blank."
+                      rows={3}
                       style={{
                         width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
                         background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                        color: "#fff", outline: "none", fontFamily: F, cursor: "pointer",
-                      }}>
-                      <option value="" style={{ background: "#111" }}>Select a claimed skill...</option>
-                      {claimedSkills.map(s => (
-                        <option key={s.id} value={s.id} style={{ background: "#111" }}>{s.name}</option>
-                      ))}
-                    </select>
-                    {claimedSkills.length === 0 && (
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 6, fontStyle: "italic" }}>
-                        You need to claim a skill first before you can upload a package for it.
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>Version</div>
-                    <input
-                      value={uploadVersion}
-                      onChange={(e) => setUploadVersion(e.target.value)}
-                      placeholder="1.0.0"
-                      style={{
-                        width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
-                        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                        color: "#fff", outline: "none", fontFamily: M,
+                        color: "#fff", outline: "none", fontFamily: F, lineHeight: 1.5, resize: "vertical",
                       }}
                     />
+                    <div style={{ fontSize: 10, fontFamily: M, color: "rgba(255,255,255,0.20)", marginTop: 4 }}>
+                      Your zip must contain a SKILL.md file. Name and description will be extracted from its frontmatter.
+                    </div>
                   </div>
-
-                  {uploadSkillTarget && (() => {
-                    const targetSkill = claimedSkills.find((s) => s.id === uploadSkillTarget);
-                    const title = targetSkill?.name || "";
-                    const validation = uploadDescription.trim().length > 0
-                      ? validateDescription(title, uploadDescription)
-                      : { blocking: null, warning: null };
-                    const len = uploadDescription.trim().length;
-                    return (
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                          <div style={{ fontSize: 11, fontFamily: M, color: "rgba(255,255,255,0.25)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                            Description (optional — edit)
-                          </div>
-                          <div style={{ fontSize: 10, fontFamily: M, color: len > 500 ? "#fca5a5" : "rgba(255,255,255,0.25)" }}>
-                            {len} / 500
-                          </div>
-                        </div>
-                        <textarea
-                          value={uploadDescription}
-                          onChange={(e) => setUploadDescription(e.target.value)}
-                          placeholder="Describe what this skill does, who it's for, and the problem it solves."
-                          rows={4}
-                          style={{
-                            width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
-                            background: "rgba(255,255,255,0.03)",
-                            border: `1px solid ${validation.blocking ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.08)"}`,
-                            color: "#fff", outline: "none", fontFamily: F, lineHeight: 1.5,
-                            resize: "vertical",
-                          }}
-                        />
-                        {validation.blocking && (
-                          <div style={{
-                            marginTop: 6, fontSize: 11, fontFamily: M,
-                            color: "rgba(252,165,165,0.9)",
-                          }}>
-                            {validation.blocking}
-                          </div>
-                        )}
-                        {!validation.blocking && validation.warning && (
-                          <div style={{
-                            marginTop: 6, fontSize: 11, fontFamily: M,
-                            color: "rgba(252,211,77,0.85)",
-                          }}>
-                            ⚠ {validation.warning}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
 
                   {uploadProgress > 0 && uploadProgress < 100 && (
                     <div style={{ marginTop: 16 }}>
@@ -882,10 +918,9 @@ export default function Publish() {
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 24,
                     }}>✓</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Package uploaded!</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Skill published!</div>
                     <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
-                      Your skill now serves downloads from our CDN instead of GitHub.
-                      Users will get the latest version you uploaded.
+                      Your skill has been submitted and will appear in your dashboard. It will be reviewed and added to the marketplace.
                     </div>
                   </div>
                   <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "14px 16px" }}>
@@ -922,15 +957,15 @@ export default function Publish() {
               {uploadStep === 1 && (
                 <button
                   onClick={handleUpload}
-                  disabled={!uploadSkillTarget || uploadProgress > 0}
+                  disabled={uploadProgress > 0}
                   style={{
                     padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 700,
-                    border: "none", background: !uploadSkillTarget || uploadProgress > 0 ? "rgba(255,255,255,0.2)" : "#fff",
-                    color: !uploadSkillTarget || uploadProgress > 0 ? "rgba(255,255,255,0.4)" : "#000",
-                    cursor: !uploadSkillTarget || uploadProgress > 0 ? "not-allowed" : "pointer",
+                    border: "none", background: uploadProgress > 0 ? "rgba(255,255,255,0.2)" : "#fff",
+                    color: uploadProgress > 0 ? "rgba(255,255,255,0.4)" : "#000",
+                    cursor: uploadProgress > 0 ? "not-allowed" : "pointer",
                     fontFamily: F,
                   }}
-                >{uploadProgress > 0 && uploadProgress < 100 ? "Uploading..." : "Upload to storage"}</button>
+                >{uploadProgress > 0 && uploadProgress < 100 ? "Uploading..." : "Publish skill"}</button>
               )}
             </div>
           </div>
