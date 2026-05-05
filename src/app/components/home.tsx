@@ -14,8 +14,17 @@ const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
 
 // ── Search ───────────────────────────────────────────────────
 
-const SEARCH_RE = /\b(find|search|look(?:ing)? for|show me|get me|any skill|suggest|recommend|need a skill|skill for|skills for|skills? that)\b/i;
-function isSearch(t: string) { return SEARCH_RE.test(t); }
+// Authoring intent — these go to the LLM, NOT search
+const BUILD_RE = /\b(build|create|author|write|draft|make|design)\s+(a |an |my |the )?(new )?(skill|plugin|agent)\b/i;
+
+// Search intent — only explicit "find/search for" patterns
+const SEARCH_RE = /\b(find|search|look(?:ing)? for|show me|get me|suggest|recommend)\b/i;
+
+function isSearch(t: string) {
+  // If the user wants to BUILD a skill, never treat it as search
+  if (BUILD_RE.test(t)) return false;
+  return SEARCH_RE.test(t);
+}
 function terms(t: string) {
   return t.replace(SEARCH_RE, "").replace(/\b(a|an|the|my|me|i|want|to|that|which|can|will|for|with|about|please|help|do|does)\b/gi, "")
     .replace(/[^\w\s-]/g, "").trim().split(/\s+/).filter(w => w.length > 2).slice(0, 5).join(" ");
