@@ -44,6 +44,27 @@ function useFeaturedSkills() {
 interface Message {
   role: "user" | "assistant";
   content: string;
+  skills?: SkillCatalogItem[]; // inline search results
+}
+
+// Detect if the user is asking to find/search for a skill
+const SEARCH_PATTERNS = /\b(find|search|look for|looking for|show me|get me|any skill|suggest|recommend|need a skill|skill for|skills for|skills that|skill that)\b/i;
+
+function isSearchQuery(text: string): boolean {
+  return SEARCH_PATTERNS.test(text);
+}
+
+// Extract search keywords from a natural language query
+function extractSearchTerms(text: string): string {
+  return text
+    .replace(SEARCH_PATTERNS, "")
+    .replace(/\b(a|an|the|my|me|i|want|to|that|which|can|will|for|with|about|please|help|do|does)\b/gi, "")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .slice(0, 5)
+    .join(" ");
 }
 
 // ── Main component ───────────────────────────────────────────
@@ -75,6 +96,23 @@ export default function Home() {
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [messages]);
 
+  // ── Search the catalog directly ─────────────────────────────
+  const searchCatalog = useCallback(async (query: string): Promise<SkillCatalogItem[]> => {
+    const terms = extractSearchTerms(query);
+    if (!terms) return [];
+
+    // Search by name and description using OR ilike
+    const { data } = await supabase
+      .from("v_skill_catalog")
+      .select("*")
+      .eq("sync_status", "active")
+      .or(terms.split(" ").map(t => `name.ilike.%${t}%,description.ilike.%${t}%`).join(","))
+      .order("quality_score", { ascending: false })
+      .limit(6);
+
+    return (data ?? []) as unknown as SkillCatalogItem[];
+  }, []);
+
   // ── Send message ────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -87,6 +125,33 @@ export default function Home() {
     setMessages(newMessages);
     setChatBusy(true);
 
+    // Route 1: Search query → query catalog directly, no LLM
+    if (isSearchQuery(text)) {
+      try {
+        const results = await searchCatalog(text);
+        const terms = extractSearchTerms(text);
+
+        if (results.length > 0) {
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `Found ${results.length} skill${results.length !== 1 ? "s" : ""} matching "${terms}":`,
+            skills: results,
+          }]);
+        } else {
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `No skills found for "${terms}". Try different keywords, or I can help you author a new skill for this.`,
+          }]);
+        }
+      } catch {
+        setMessages(prev => [...prev, { role: "assistant", content: "Search failed. Try again." }]);
+      } finally {
+        setChatBusy(false);
+      }
+      return;
+    }
+
+    // Route 2: Everything else → send to chat endpoint
     try {
       const sbBase = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
       const anonKey = (supabase as unknown as { supabaseKey: string }).supabaseKey;
@@ -143,7 +208,7 @@ export default function Home() {
     } finally {
       setChatBusy(false);
     }
-  }, [input, messages, chatBusy]);
+  }, [input, messages, chatBusy, searchCatalog]);
 
   // ── Action chip handler ─────────────────────────────────────
   const handleChip = (text: string) => {
@@ -208,20 +273,50 @@ export default function Home() {
             {messages.map((m, i) => (
               <div key={i} style={{
                 alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                maxWidth: mobile ? "92%" : "85%",
-                padding: "10px 14px",
-                borderRadius: m.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                background: m.role === "user" ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.025)",
-                border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)"}`,
-                fontFamily: m.role === "user" ? M : F,
-                fontStyle: m.role === "assistant" ? "italic" : "normal",
-                fontSize: m.role === "user" ? 13 : 14,
-                color: "rgba(255,255,255,0.80)",
-                lineHeight: 1.6,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
+                maxWidth: m.skills ? "100%" : (mobile ? "92%" : "85%"),
+                width: m.skills ? "100%" : undefined,
               }}>
-                {m.content || (chatBusy && i === messages.length - 1 ? "…" : "")}
+                {/* Text content */}
+                {(m.content || (chatBusy && i === messages.length - 1)) && (
+                  <div style={{
+                    padding: "10px 14px",
+                    borderRadius: m.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                    background: m.role === "user" ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.025)",
+                    border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)"}`,
+                    fontFamily: m.role === "user" ? M : F,
+                    fontStyle: m.role === "assistant" ? "italic" : "normal",
+                    fontSize: m.role === "user" ? 13 : 14,
+                    color: "rgba(255,255,255,0.80)",
+                    lineHeight: 1.6,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}>
+                    {m.content || (chatBusy && i === messages.length - 1 ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(255,255,255,0.40)" }}>
+                        <span style={{
+                          display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+                          border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#22d3ee",
+                          animation: "skiyu-spin 0.7s linear infinite",
+                        }} />
+                        Thinking…
+                        <style>{`@keyframes skiyu-spin { to { transform: rotate(360deg); } }`}</style>
+                      </span>
+                    ) : "")}
+                  </div>
+                )}
+
+                {/* Inline skill results */}
+                {m.skills && m.skills.length > 0 && (
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(260px, 1fr))",
+                    gap: 10, marginTop: 10,
+                  }}>
+                    {m.skills.map(skill => (
+                      <SkillCard key={skill.id} skill={skill} userId={user?.id ?? null} />
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
