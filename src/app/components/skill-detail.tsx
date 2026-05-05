@@ -4,6 +4,7 @@ import { useSkillBySlug, downloadSkill } from "@/lib/hooks";
 import { useAuth } from "@/lib/auth";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 import { preloadRoute } from "../routes";
 
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
@@ -123,6 +124,7 @@ export default function SkillDetail() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const mobile = useIsMobile();
   const { data, loading } = useSkillBySlug(slug);
 
   const [copied, setCopied] = useState(false);
@@ -176,7 +178,7 @@ export default function SkillDetail() {
           style={{
             maxWidth: 1100,
             margin: "0 auto",
-            padding: "120px 48px",
+            padding: mobile ? "80px 18px" : "120px 48px",
             color: "rgba(255, 255, 255, 0.40)",
             fontFamily: M,
             fontSize: 13,
@@ -255,7 +257,7 @@ export default function SkillDetail() {
 
   return (
     <Shell route={`/skills/${skill.slug}`}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 48px 80px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: mobile ? "32px 16px 48px" : "60px 48px 80px" }}>
         {/* Header */}
         <div style={{ marginBottom: 48 }}>
           <Kicker>

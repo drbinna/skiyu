@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import SkillModal from "./skill-modal";
 import SkillCard from "./skill-card";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 import type { SkillCatalogItem } from "@/lib/types";
 import { preloadRoute } from "../routes";
 
@@ -45,6 +46,7 @@ export default function Explore() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const mobile = useIsMobile();
 
   const handleDownload = async (e: React.MouseEvent, skillId: string, skillName: string) => {
     e.stopPropagation();
@@ -143,17 +145,17 @@ export default function Explore() {
 
       {/* NAV */}
       <nav style={{
-        position: "sticky", top: 0, zIndex: 100, height: 56, padding: "0 24px",
+        position: "sticky", top: 0, zIndex: 100, height: 56, padding: mobile ? "0 14px" : "0 24px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: "rgba(0,0,0,0.85)", backdropFilter: "blur(20px)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mobile ? 12 : 24 }}>
           <Wordmark size={20} clickable />
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>explore</span>
+          {!mobile && <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontFamily: M }}>explore</span>}
         </div>
-        <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
-          {[
+        <div style={{ display: "flex", gap: mobile ? 12 : 20, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+          {!mobile && [
             { label: "Explore", path: "/explore" as const },
             { label: "Publish", path: "/publish" as const },
             { label: "Docs", path: "/docs" as const },
@@ -191,8 +193,8 @@ export default function Explore() {
 
       <div style={{ display: "flex", maxWidth: 1200, margin: "0 auto" }}>
 
-        {/* SIDEBAR */}
-        <aside style={{
+        {/* SIDEBAR — hidden on mobile */}
+        {!mobile && <aside style={{
           width: sidebarCollapsed ? 48 : 220, flexShrink: 0,
           borderRight: "1px solid rgba(255,255,255,0.04)",
           padding: sidebarCollapsed ? "20px 8px" : "20px 16px",
@@ -245,7 +247,7 @@ export default function Explore() {
               </div>
             </>
           )}
-        </aside>
+        </aside>}
 
         {/* MAIN */}
         <main style={{ flex: 1, minWidth: 0 }}>
@@ -253,7 +255,7 @@ export default function Explore() {
           {/* search bar */}
           <div style={{
             position: "sticky", top: 56, zIndex: 50,
-            padding: "16px 24px",
+            padding: mobile ? "12px 14px" : "16px 24px",
             background: "rgba(0,0,0,0.85)", backdropFilter: "blur(20px)",
             borderBottom: "1px solid rgba(255,255,255,0.04)",
           }}>
@@ -303,7 +305,7 @@ export default function Explore() {
           {/* card grid */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))",
             gap: 16,
             padding: "16px 24px",
           }}>

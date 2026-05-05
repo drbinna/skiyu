@@ -11,6 +11,7 @@ import { preloadRoute } from "../routes";
 import { supabase } from "@/lib/supabase";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
+import { useIsMobile } from "./ui/use-mobile";
 
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
 const M = "'Fragment Mono', 'JetBrains Mono', Menlo, monospace";
@@ -54,6 +55,7 @@ type TraceEvent =
 export default function Run() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const mobile = useIsMobile();
   const slug = (searchParams.get("skill") ?? "").trim() || null;
 
   const [skill, setSkill] = useState<Skill | null>(null);
@@ -186,15 +188,15 @@ export default function Run() {
   return (
     <div style={{ background: "#000", color: "#fff", height: "100vh", fontFamily: F, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* NAV */}
-      <nav style={{ flexShrink: 0, height: 52, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.90)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <nav style={{ flexShrink: 0, height: 52, padding: mobile ? "0 12px" : "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.90)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Wordmark size={18} clickable />
-          <span style={{ fontFamily: M, fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+          {!mobile && <span style={{ fontFamily: M, fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
             {skill ? `run · ${skill.slug}` : "run"}
-          </span>
+          </span>}
         </div>
-        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-          {(["Explore", "Author", "Docs"] as const).map(l => {
+        <div style={{ display: "flex", gap: mobile ? 10 : 18, alignItems: "center" }}>
+          {!mobile && (["Explore", "Author", "Docs"] as const).map(l => {
             const path = `/${l.toLowerCase()}` as keyof typeof preloadRoute;
             return (
               <span key={l} role="link" tabIndex={0} onClick={() => navigate(path)} onMouseEnter={() => preloadRoute[path]?.()}
@@ -206,7 +208,7 @@ export default function Run() {
       </nav>
 
       {/* BODY */}
-      <main style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
+      <main style={{ flex: 1, display: "flex", minHeight: 0, overflow: mobile ? "auto" : "hidden" }}>
         {!slug ? (
           <NoSkillState navigate={navigate} />
         ) : skillLoading ? (
@@ -221,7 +223,7 @@ export default function Run() {
             </div>
           </Centered>
         ) : skill ? (
-          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "380px 1fr", minHeight: 0, overflow: "hidden" }}>
+          <div style={{ flex: 1, display: mobile ? "flex" : "grid", flexDirection: mobile ? "column" : undefined, gridTemplateColumns: mobile ? undefined : "380px 1fr", minHeight: 0, overflow: mobile ? "auto" : "hidden" }}>
             {/* ── LEFT: skill info + input + trace ── */}
             <aside style={{ borderRight: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
               {/* Skill header + input — fixed height */}

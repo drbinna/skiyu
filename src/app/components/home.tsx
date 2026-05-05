@@ -11,6 +11,7 @@ import { preloadRoute } from "../routes";
 import NavAuth from "./nav-auth";
 import Wordmark from "./wordmark";
 import SkillCard from "./skill-card";
+import { useIsMobile } from "./ui/use-mobile";
 import type { SkillCatalogItem } from "@/lib/types";
 
 const F = "'Erode', 'Cormorant Garamond', Georgia, serif";
@@ -50,6 +51,7 @@ interface Message {
 export default function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const mobile = useIsMobile();
   const { skills: featured, loading: featuredLoading } = useFeaturedSkills();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -155,13 +157,13 @@ export default function Home() {
       {/* ── NAV ── */}
       <nav style={{
         position: "sticky", top: 0, zIndex: 100, height: 52,
-        padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: mobile ? "0 14px" : "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
         background: "rgba(0,0,0,0.90)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
         borderBottom: "1px solid rgba(255,255,255,0.04)",
       }}>
         <Wordmark size={18} clickable />
-        <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          {(["Explore", "Publish"] as const).map(l => {
+        <div style={{ display: "flex", gap: mobile ? 12 : 20, alignItems: "center" }}>
+          {!mobile && (["Explore", "Publish"] as const).map(l => {
             const path = `/${l.toLowerCase()}` as keyof typeof preloadRoute;
             return (
               <span key={l} role="link" tabIndex={0} onClick={() => navigate(path)} onMouseEnter={() => preloadRoute[path]?.()}
@@ -174,19 +176,24 @@ export default function Home() {
 
       {/* ── HERO + CHAT ── */}
       <section style={{
-        maxWidth: 720, margin: "0 auto", padding: chatOpen ? "40px 20px 0" : "min(12vh, 120px) 20px 0",
+        maxWidth: 720, margin: "0 auto",
+        padding: chatOpen
+          ? `${mobile ? 20 : 40}px ${mobile ? 14 : 20}px 0`
+          : `${mobile ? 48 : "min(12vh, 120px)"}px ${mobile ? 14 : 20}px 0`,
         transition: "padding 400ms cubic-bezier(0.25, 0.8, 0.25, 1)",
       }}>
-        {/* Headline — shrinks when chat is open */}
+        {/* Headline */}
         <h1 style={{
           textAlign: "center",
           fontFamily: F,
           fontWeight: 700,
-          fontSize: chatOpen ? "clamp(20px, 3vw, 28px)" : "clamp(32px, 5vw, 52px)",
+          fontSize: chatOpen
+            ? (mobile ? 18 : "clamp(20px, 3vw, 28px)")
+            : (mobile ? "clamp(24px, 7vw, 36px)" : "clamp(32px, 5vw, 52px)"),
           letterSpacing: "-0.035em",
           lineHeight: 1.1,
           transition: "font-size 400ms cubic-bezier(0.25, 0.8, 0.25, 1)",
-          marginBottom: chatOpen ? 16 : 32,
+          marginBottom: chatOpen ? 12 : (mobile ? 20 : 32),
         }}>
           <span style={{ color: "#fff" }}>What skill do you need?</span>
         </h1>
@@ -194,14 +201,14 @@ export default function Home() {
         {/* Chat messages — shown when conversation starts */}
         {chatOpen && messages.length > 0 && (
           <div ref={chatScrollRef} style={{
-            maxHeight: "45vh", overflowY: "auto", marginBottom: 16,
-            display: "flex", flexDirection: "column", gap: 10,
-            padding: "0 4px",
+            maxHeight: mobile ? "35vh" : "45vh", overflowY: "auto", marginBottom: 12,
+            display: "flex", flexDirection: "column", gap: 8,
+            padding: "0 2px",
           }}>
             {messages.map((m, i) => (
               <div key={i} style={{
                 alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                maxWidth: "85%",
+                maxWidth: mobile ? "92%" : "85%",
                 padding: "10px 14px",
                 borderRadius: m.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                 background: m.role === "user" ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.025)",
@@ -240,9 +247,10 @@ export default function Home() {
             rows={1}
             style={{
               width: "100%", boxSizing: "border-box",
-              padding: "16px 18px 8px",
+              padding: mobile ? "14px 14px 6px" : "16px 18px 8px",
               background: "transparent", border: "none", outline: "none",
-              color: "#fff", fontFamily: F, fontStyle: "italic", fontSize: 15,
+              color: "#fff", fontFamily: F, fontStyle: "italic",
+              fontSize: mobile ? 14 : 15,
               lineHeight: 1.5, resize: "none",
               minHeight: 56, maxHeight: 180,
               overflow: "hidden",
@@ -280,8 +288,12 @@ export default function Home() {
 
         {/* Action chips */}
         <div style={{
-          display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center",
-          marginTop: 16, padding: "0 4px",
+          display: "flex", flexWrap: mobile ? "nowrap" : "wrap",
+          gap: 8, justifyContent: mobile ? "flex-start" : "center",
+          marginTop: 14, padding: "0 4px",
+          overflowX: mobile ? "auto" : "visible",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
         }}>
           {[
             { icon: "🔍", label: "Find a skill for my task", prompt: "Help me find a skill for " },
@@ -302,6 +314,7 @@ export default function Home() {
                 fontFamily: M, fontSize: 11,
                 cursor: "pointer",
                 transition: "all 150ms",
+                whiteSpace: "nowrap", flexShrink: 0,
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.18)"; (e.currentTarget as HTMLElement).style.color = "#fff"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.45)"; }}
@@ -316,7 +329,9 @@ export default function Home() {
       {/* ── FEATURED SKILLS ── */}
       <section style={{
         maxWidth: 1100, margin: "0 auto",
-        padding: chatOpen ? "40px 24px 0" : "80px 24px 0",
+        padding: chatOpen
+          ? `${mobile ? 28 : 40}px ${mobile ? 14 : 24}px 0`
+          : `${mobile ? 48 : 80}px ${mobile ? 14 : 24}px 0`,
         transition: "padding 400ms",
       }}>
         <div style={{
@@ -352,8 +367,8 @@ export default function Home() {
         ) : (
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 14,
+            gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: mobile ? 12 : 14,
           }}>
             {featured.map(skill => (
               <SkillCard key={skill.id} skill={skill} userId={user?.id ?? null} />
@@ -365,7 +380,7 @@ export default function Home() {
       {/* ── CATEGORIES ── */}
       <section style={{
         maxWidth: 1100, margin: "0 auto",
-        padding: "48px 24px 0",
+        padding: `48px ${mobile ? 14 : 24}px 0`,
       }}>
         <div style={{
           fontFamily: M, fontSize: 10, fontWeight: 600,
@@ -410,10 +425,12 @@ export default function Home() {
       {/* ── FOOTER STATS ── */}
       <footer style={{
         maxWidth: 1100, margin: "0 auto",
-        padding: "56px 24px 40px",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: `${mobile ? 36 : 56}px ${mobile ? 14 : 24}px ${mobile ? 28 : 40}px`,
+        display: "flex", flexDirection: mobile ? "column" : "row",
+        justifyContent: "space-between", alignItems: mobile ? "flex-start" : "center",
+        gap: mobile ? 12 : 0,
         borderTop: "1px solid rgba(255,255,255,0.04)",
-        marginTop: 56,
+        marginTop: mobile ? 36 : 56,
       }}>
         <div style={{ display: "flex", gap: 24 }}>
           {[
